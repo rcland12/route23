@@ -66,6 +66,7 @@ route23 is a self-hosted, Docker-based automated torrent rotation system designe
 ## Features
 
 **Core route23 Features:**
+
 - **Intelligent Batch Rotation** — Automatically cycles through your torrent library in manageable batches
 - **Time-Based Scheduling** — Configurable rotation periods (default: 14 days per batch)
 - **Persistent State Management** — Remembers exactly where it left off across restarts
@@ -73,6 +74,7 @@ route23 is a self-hosted, Docker-based automated torrent rotation system designe
 - **Progress Tracking** — Real-time status reporting showing progress through your collection
 
 **Supporting Infrastructure:**
+
 - **VPN Protection** — All torrent traffic routed through your choice of 23+ VPN providers (Gluetun)
 - **Web Interface** — Full ruTorrent UI for manual torrent management
 - **Email Notifications** — SMTP relay for torrent completion alerts (optional)
@@ -190,78 +192,61 @@ Click any VPN provider above to access detailed setup guides including:
 
 ## Installation
 
-### 1. Clone the Repository
+### 1. Clone and Enter Directory
 
 ```bash
 git clone https://github.com/rcland12/route23.git
 cd route23
 ```
 
-### 2. Configure Your VPN
+### 2. Create Environment File
 
-Choose your VPN provider from the [VPN Configuration](#vpn-configuration) section above and follow the setup guide to get your credentials.
-
-### 3. Create Environment File
-
-Create a `.env` file in the project root:
+Create a `.env` file with all required variables:
 
 ```bash
-# VPN Configuration
-VPN_SERVICE="nordvpn"
-NORDVPN_TOKEN=your_nordvpn_access_token
-WIREGUARD_PRIVATE_KEY=your_wireguard_private_key
+# VPN Configuration (required)
+VPN_SERVICE="nordvpn"                    # Your VPN provider
+NORDVPN_TOKEN=your_token_here            # Provider-specific token/credentials
+WIREGUARD_PRIVATE_KEY=your_key_here      # Get from VPN provider API
+PRIVATE_SUBNET="192.168.0.0/24"          # Your local network subnet
 
-# Network
-PRIVATE_SUBNET="192.168.0.0/24"
-TIMEZONE="America/New_York"
+# System Configuration (required)
+TIMEZONE="America/New_York"              # Your timezone
+SERVER_NAME="route23"                    # Server hostname
 
-# Email Notifications (Optional)
-POSTFIX_EMAIL=youremail@gmail.com
-POSTFIX_PASSWORD=your_gmail_app_password
+# ruTorrent Authentication (required)
+RTORRENT_USER=your_username              # Web UI username
+RTORRENT_PASS=your_password              # Web UI password
 
-# ruTorrent Authentication
-RTORRENT_USER=your_username
-RTORRENT_PASS=your_password
+# Email Notifications (optional)
+POSTFIX_EMAIL=youremail@gmail.com        # Your email address
+POSTFIX_PASSWORD=your_app_password       # Email app password
 ```
 
-### 4. Get Your VPN Credentials
+**Get your VPN credentials:** See [VPN Configuration](#vpn-configuration) for provider-specific setup guides.
 
-Follow the setup guide for your chosen VPN provider (see [VPN Configuration](#vpn-configuration) section).
-
-For example, NordVPN users:
-
+**Find your private subnet:**
 ```bash
-curl -s -u token:YOUR_NORDVPN_TOKEN \
-  "https://api.nordvpn.com/v1/users/services/credentials" | jq -r '.nordlynx_private_key'
+ip route show | awk '/proto kernel/ && /192\.168\./ {print $1}'
 ```
 
-### 5. Configure ruTorrent Authentication
-
-Generate credentials using `htpasswd`:
+### 3. Create ruTorrent Authentication File
 
 ```bash
 # Install htpasswd if needed
 sudo apt update && sudo apt install apache2-utils
 
-# Generate password hash
-htpasswd -Bbn your_username your_password > ./passwd/rutorrent.htpasswd
+# Create authentication file (must match RTORRENT_USER/RTORRENT_PASS from .env)
+htpasswd -Bbn your_username your_password > ./rutorrent/passwd/rutorrent.htpasswd
 ```
 
-### 6. Find Your Private Subnet
-
-```bash
-ip route show | awk '/proto kernel/ && /192\.168\./ {print $1}'
-```
-
-Update `PRIVATE_SUBNET` in your `.env` file with the output.
-
-### 7. Start the Services
+### 4. Start Services
 
 ```bash
 docker compose up -d nginx
 ```
 
-Access the web UI at `http://<your-server-ip>:8080`
+Access the web UI at `http://<your-server-ip>:8080` using the credentials you created above.
 
 ## Email Notifications (Optional)
 
@@ -577,6 +562,7 @@ docker compose run --rm app
 ```
 
 The rotator will:
+
 - Check if the current rotation period has expired
 - If yes, remove old torrents and add the next batch
 - If no, display when the next rotation is due
@@ -584,6 +570,7 @@ The rotator will:
 
 **Initial Run:**
 On the first run, route23 will:
+
 1. Load all `.torrent` files from `./rutorrent/torrents/`
 2. Add the first batch (BATCH_SIZE torrents) to ruTorrent
 3. Record the start time and batch information
@@ -598,6 +585,7 @@ docker compose run --rm -e SHOW_STATUS=true app
 ```
 
 This displays:
+
 - Total number of torrents in your collection
 - Current batch being seeded
 - Batch start time
@@ -606,6 +594,7 @@ This displays:
 - Progress through your collection
 
 Example output:
+
 ```
 Status Report
 =============
@@ -631,6 +620,7 @@ docker compose run --rm -e FORCE_ROTATION=true -e DELETE_DATA=true app
 ```
 
 **When to Force Rotation:**
+
 - Testing the rotation system
 - Manually skipping to the next batch
 - Cleaning up disk space with DELETE_DATA=true
@@ -649,6 +639,7 @@ crontab -e
 ```
 
 **How Automation Works:**
+
 - Cron runs the rotator daily (or at your chosen interval)
 - The rotator checks if the rotation period has expired
 - If expired, it performs the rotation automatically
@@ -656,6 +647,7 @@ crontab -e
 - All output is logged to `./logs/rotator.log`
 
 **Alternative Schedules:**
+
 ```bash
 # Check every 12 hours
 0 */12 * * * cd /path/to/route23 && docker compose run --rm app >> ./logs/rotator.log 2>&1
@@ -673,46 +665,48 @@ Configure route23's behavior through environment variables in `docker-compose.ya
 
 #### Core Settings
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `BATCH_SIZE` | `10` | Number of torrents per rotation batch |
-| `ROTATION_DAYS` | `14` | Days before rotating to next batch |
-| `DELETE_DATA` | `false` | Delete downloaded data when rotating out |
+| Variable        | Default | Description                              |
+| --------------- | ------- | ---------------------------------------- |
+| `BATCH_SIZE`    | `10`    | Number of torrents per rotation batch    |
+| `ROTATION_DAYS` | `14`    | Days before rotating to next batch       |
+| `DELETE_DATA`   | `false` | Delete downloaded data when rotating out |
 
 #### Performance Settings (for Raspberry Pi)
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ADD_DELAY` | `30` | Seconds to wait between adding each torrent |
-| `REMOVE_DELAY` | `5` | Seconds to wait between removing each torrent |
-| `MAX_LOAD` | `4.0` | Pause operations if system load exceeds this |
-| `LOAD_WAIT` | `30` | Seconds to wait when load is high before retrying |
-| `STARTUP_DELAY` | `10` | Seconds to wait before starting operations |
+| Variable        | Default | Description                                       |
+| --------------- | ------- | ------------------------------------------------- |
+| `ADD_DELAY`     | `30`    | Seconds to wait between adding each torrent       |
+| `REMOVE_DELAY`  | `5`     | Seconds to wait between removing each torrent     |
+| `MAX_LOAD`      | `4.0`   | Pause operations if system load exceeds this      |
+| `LOAD_WAIT`     | `30`    | Seconds to wait when load is high before retrying |
+| `STARTUP_DELAY` | `10`    | Seconds to wait before starting operations        |
 
 #### Advanced Settings
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `FORCE_ROTATION` | `false` | Force immediate rotation regardless of time |
-| `SHOW_STATUS` | `false` | Display status information only (no changes) |
-| `LOG_LEVEL` | `INFO` | Logging verbosity (DEBUG, INFO, WARNING, ERROR) |
+| Variable         | Default | Description                                     |
+| ---------------- | ------- | ----------------------------------------------- |
+| `FORCE_ROTATION` | `false` | Force immediate rotation regardless of time     |
+| `SHOW_STATUS`    | `false` | Display status information only (no changes)    |
+| `LOG_LEVEL`      | `INFO`  | Logging verbosity (DEBUG, INFO, WARNING, ERROR) |
 
 **Example Configuration for Heavy Load:**
+
 ```yaml
 environment:
-  BATCH_SIZE: 5           # Smaller batches
-  ADD_DELAY: 60           # Wait longer between operations
-  MAX_LOAD: 2.0           # Lower load threshold
-  LOAD_WAIT: 60           # Wait longer when load is high
+  BATCH_SIZE: 5 # Smaller batches
+  ADD_DELAY: 60 # Wait longer between operations
+  MAX_LOAD: 2.0 # Lower load threshold
+  LOAD_WAIT: 60 # Wait longer when load is high
 ```
 
 **Example Configuration for Powerful Server:**
+
 ```yaml
 environment:
-  BATCH_SIZE: 50          # Larger batches
-  ROTATION_DAYS: 7        # Faster rotation
-  ADD_DELAY: 5            # Shorter delays
-  MAX_LOAD: 8.0           # Higher load tolerance
+  BATCH_SIZE: 50 # Larger batches
+  ROTATION_DAYS: 7 # Faster rotation
+  ADD_DELAY: 5 # Shorter delays
+  MAX_LOAD: 8.0 # Higher load tolerance
 ```
 
 ### Understanding Rotation Timeline
@@ -723,16 +717,17 @@ Calculate how long it takes to seed your entire collection:
 
 **Examples:**
 
-| Collection Size | Batch Size | Rotation Days | Total Time | Notes |
-|----------------|------------|---------------|------------|-------|
-| 1600 torrents | 10 | 14 | ~6.1 years | Default settings |
-| 1600 torrents | 20 | 14 | ~3.1 years | Larger batches |
-| 1600 torrents | 20 | 7 | ~1.5 years | Faster rotation |
-| 1600 torrents | 50 | 7 | ~7.5 months | Aggressive seeding |
-| 500 torrents | 10 | 14 | ~1.9 years | Smaller collection |
-| 500 torrents | 25 | 7 | ~4.8 months | Faster cycling |
+| Collection Size | Batch Size | Rotation Days | Total Time  | Notes              |
+| --------------- | ---------- | ------------- | ----------- | ------------------ |
+| 1600 torrents   | 10         | 14            | ~6.1 years  | Default settings   |
+| 1600 torrents   | 20         | 14            | ~3.1 years  | Larger batches     |
+| 1600 torrents   | 20         | 7             | ~1.5 years  | Faster rotation    |
+| 1600 torrents   | 50         | 7             | ~7.5 months | Aggressive seeding |
+| 500 torrents    | 10         | 14            | ~1.9 years  | Smaller collection |
+| 500 torrents    | 25         | 7             | ~4.8 months | Faster cycling     |
 
 **Considerations:**
+
 - **Longer rotation periods** = Better seeding ratios per torrent
 - **Shorter rotation periods** = More of your collection gets seeded sooner
 - **Larger batches** = Faster through collection, but higher resource usage
@@ -754,6 +749,7 @@ route23 maintains persistent state in `./rutorrent/data/states/route23_state.jso
 ```
 
 **State File Details:**
+
 - `current_index` - Position in your torrent collection (next torrent to add)
 - `batch_started` - Timestamp when current batch was added
 - `completed_batches` - Number of batches that have been completed
@@ -787,6 +783,7 @@ http://<server-ip>:8080
 ```
 
 **Features:**
+
 - Manually add/remove torrents
 - Monitor download/upload speeds
 - View peer connections
@@ -817,6 +814,7 @@ mvmovie <movie-file> <destination>
 ```
 
 The utility includes:
+
 - Safe file moving with verification
 - Automatic backup synchronization
 - Plex library integration
