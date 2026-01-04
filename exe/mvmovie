@@ -1,0 +1,169 @@
+#!/bin/bash
+
+# mvmovie - Movie management script for Plex with backup functionality
+# Usage: mvmovie [MOVIE_DIRECTORY] [--backup]
+#        mvmovie --backup (sync only)
+
+PLEX_DIR="/mnt/plex/Media/Movies"
+BACKUP_DIR="/mnt/backup/Media/Movies"
+DOWNLOAD_DIR="$HOME/rtorrent/download"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+print_info() {
+    echo -e "${GREEN}[INFO]${NC} $1"
+}
+
+print_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+print_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+sync_to_backup() {
+    print_info "Starting sync to backup drive..."
+
+    if [ ! -d "$BACKUP_DIR" ]; then
+        print_warning "Backup directory doesn't exist, creating: $BACKUP_DIR"
+        mkdir -p "$BACKUP_DIR"
+    fi
+
+    if command -v rsync >/dev/null 2>&1; then
+        print_info "Using rsync for backup sync..."
+        rsync -av --delete "$PLEX_DIR/" "$BACKUP_DIR/"
+        if [ $? -eq 0 ]; then
+            print_info "Backup sync completed successfully"
+        else
+            print_error "Backup sync failed"
+            return 1
+        fi
+    else
+        print_warning "rsync not found, using cp instead (less efficient)"
+        cp -r "$PLEX_DIR"/* "$BACKUP_DIR/" 2>/dev/null
+        if [ $? -eq 0 ]; then
+            print_info "Backup copy completed"
+        else
+            print_error "Backup copy failed"
+            return 1
+        fi
+    fi
+}
+
+move_movie() {
+    local movie_dir="$1"
+
+    if [ ! -d "$movie_dir" ]; then
+        print_error "Movie directory not found: $movie_dir"
+        return 1
+    fi
+
+    local movie_basename=$(basename "$movie_dir")
+    local dest_path="$PLEX_DIR/$movie_basename"
+
+    if [ -d "$dest_path" ]; then
+        print_warning "Destination already exists: $dest_path"
+        read -p "Do you want to overwrite? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            print_info "Operation cancelled"
+            return 1
+        fi
+        rm -rf "$dest_path"
+    fi
+
+    if [ ! -d "$PLEX_DIR" ]; then
+        print_warning "Plex directory doesn't exist, creating: $PLEX_DIR"
+        mkdir -p "$PLEX_DIR"
+    fi
+
+    print_info "Moving '$movie_basename' to Plex directory..."
+    mv "$movie_dir" "$dest_path"
+
+    if [ $? -eq 0 ]; then
+        print_info "Movie moved successfully to: $dest_path"
+        return 0
+    else
+        print_error "Failed to move movie"
+        return 1
+    fi
+}
+
+show_usage() {
+    echo "Usage: mvmovie [MOVIE_DIRECTORY] [--backup]"
+    echo "       mvmovie --backup (sync only)"
+    echo ""
+    echo "Examples:"
+    echo "  mvmovie 'Movie (2004)'           # Move movie only"
+    echo "  mvmovie 'Movie (2004)' --backup  # Move movie and backup"
+    echo "  mvmovie --backup                 # Sync backup only"
+    echo ""
+    echo "Configuration:"
+    echo "  Plex Directory:   $PLEX_DIR"
+    echo "  Backup Directory: $BACKUP_DIR"
+    echo "  Download Directory: $DOWNLOAD_DIR"
+}
+
+main() {
+    local movie_dir=""
+    local do_backup=false
+    local backup_only=false
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --backup)
+                do_backup=true
+                shift
+                ;;
+            --help|-h)
+                show_usage
+                exit 0
+                ;;
+            *)
+                if [ -z "$movie_dir" ]; then
+                    movie_dir="$1"
+                else
+                    print_error "Unknown argument: $1"
+                    show_usage
+                    exit 1
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    if [ "$do_backup" = true ] && [ -z "$movie_dir" ]; then
+        backup_only=true
+    fi
+
+    if [ -z "$movie_dir" ] && [ "$backup_only" = false ]; then
+        show_usage
+        exit 1
+    fi
+
+    if [ "$backup_only" = true ]; then
+        sync_to_backup
+        exit $?
+    fi
+
+    if [[ "$movie_dir" != /* ]]; then
+        movie_dir="$PWD/$movie_dir"
+    fi
+
+    if move_movie "$movie_dir"; then
+        print_info "Movie processing completed successfully"
+
+        if [ "$do_backup" = true ]; then
+            sync_to_backup
+        fi
+    else
+        print_error "Movie processing failed"
+        exit 1
+    fi
+}
+
+main "$@"

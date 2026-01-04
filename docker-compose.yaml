@@ -1,0 +1,161 @@
+name: route23
+
+networks:
+  nginx:
+    driver: bridge
+
+services:
+  app:
+    container_name: route23
+    build: .
+    restart: "no"
+    depends_on:
+      rutorrent:
+        condition: service_healthy
+    networks:
+      - nginx
+    environment:
+      TZ: ${TIMEZONE}
+      TORRENT_DIR: /torrents
+      RTORRENT_URL: http://vpn:8080/plugins/httprpc/action.php
+      RTORRENT_USER: ${RTORRENT_USER}
+      RTORRENT_PASS: ${RTORRENT_PASS}
+      STATE_FILE: /data/rotator_state.json
+      DOWNLOAD_DIR: /downloads
+      BATCH_SIZE: 10
+      ROTATION_DAYS: 14
+      ADD_DELAY: 30
+      REMOVE_DELAY: 5
+      MAX_LOAD: 4.0
+      LOAD_WAIT: 30
+      STARTUP_DELAY: 10
+      FORCE_ROTATION: "false"
+      DELETE_DATA: "true"
+      SHOW_STATUS: "false"
+      LOG_LEVEL: INFO
+    volumes:
+      - ./rutorrent/torrents:/torrents:ro
+      - ./rutorrent/data:/data
+      - ./rutorrent/downloads/route23:/downloads
+      - /proc/loadavg:/proc/loadavg:ro
+
+  nginx:
+    container_name: route23-nginx
+    image: nginx:alpine
+    restart: unless-stopped
+    depends_on:
+      rutorrent:
+        condition: service_healthy
+    networks:
+      - nginx
+    ports:
+      - 8080:80
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "nginx -t || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  rutorrent:
+    container_name: route23-rutorrent
+    image: crazymax/rtorrent-rutorrent:latest
+    network_mode: "service:vpn"
+    depends_on:
+      vpn:
+        condition: service_healthy
+      postfix:
+        condition: service_healthy
+    environment:
+      PUID: 1000
+      PGID: 1000
+      TZ: ${TIMEZONE}
+      RT_LOG_LEVEL: info
+      MEMORY_LIMIT: 256M
+      XMLRPC_PORT: 18000
+      SMTP_SERVER: route23-postfix
+      SMTP_PORT: 25
+      FROM_EMAIL: torrents@website.com
+      TO_EMAIL: ${POSTFIX_EMAIL}
+      SERVER_NAME: ${SERVER_NAME}
+    ulimits:
+      nproc: 65535
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - ./rutorrent/data:/data
+      - ./rutorrent/downloads:/downloads
+      - ./rutorrent/passwd:/passwd
+    restart: unless-stopped
+
+  vpn:
+    container_name: route23-vpn
+    image: qmcgaw/gluetun:latest
+    restart: unless-stopped
+    networks:
+      - nginx
+    ports:
+      - "6881:6881"
+      - "6881:6881/udp"
+    environment:
+      NORDVPN_TOKEN: ${NORDVPN_TOKEN}
+      WIREGUARD_PRIVATE_KEY: ${WIREGUARD_PRIVATE_KEY}
+      VPN_SERVICE_PROVIDER: ${VPN_SERVICE}
+      VPN_TYPE: "wireguard"
+      SERVER_COUNTRIES: "United States"
+      SERVER_CATEGORIES: "P2P"
+      FIREWALL_OUTBOUND_SUBNETS: ${PRIVATE_SUBNET}
+      TZ: ${TIMEZONE}
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    healthcheck:
+      test: ["CMD", "/gluetun-entrypoint", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  postfix:
+    container_name: route23-postfix
+    image: boky/postfix:latest
+    restart: unless-stopped
+    networks:
+      - nginx
+    ports:
+      - "127.0.0.1:2525:25"
+    environment:
+      RELAYHOST: "[smtp.gmail.com]:587"
+      RELAYHOST_USERNAME: ${POSTFIX_EMAIL}
+      RELAYHOST_PASSWORD: ${POSTFIX_PASSWORD}
+      HOSTNAME: mail.website.com
+      ALLOWED_SENDER_DOMAINS: rustypi3 localhost website.com
+      MYNETWORKS: "127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16"
+      POSTFIX_message_size_limit: 52428800
+      SMTP_HEADER_CHECKS: "regexp:/etc/postfix/smtp_header_checks"
+      SMTP_TLS_SECURITY_LEVEL: may
+      SMTP_USE_TLS: "yes"
+      SMTPD_USE_TLS: "yes"
+      INBOUND_DEBUGGING: 0
+      DISABLE_SMTP_UTF8: 0
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - FOWNER
+      - DAC_OVERRIDE
+      - SETGID
+      - SETUID
+      - NET_BIND_SERVICE
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "25"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

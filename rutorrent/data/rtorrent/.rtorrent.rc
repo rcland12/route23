@@ -1,0 +1,113 @@
+#############################################################################
+# rTorrent Configuration - Optimized for 50 Movies
+# Container: CrazyMax rtorrent-rutorrent
+#############################################################################
+
+### Connection Limits - Scaled for 50 torrents ###
+# Global upload limits (increased from 40)
+throttle.max_uploads.global.set = 75
+
+# Per-torrent peer limits (slightly reduced per torrent to handle more torrents)
+throttle.min_peers.normal.set = 30
+throttle.max_peers.normal.set = 80
+throttle.min_peers.seed.set = 8
+throttle.max_peers.seed.set = 40
+
+# Upload slots per torrent (reduced to manage more torrents)
+throttle.max_uploads.set = 8
+
+# Network connections (significantly increased)
+network.max_open_sockets.set = 2048
+network.max_open_files.set = 2048
+network.http.max_open.set = 256
+
+### Bandwidth Management ###
+# Global bandwidth limits (controlled via environment variables or manually set)
+# Use RT_GLOBAL_DOWN_MAX_RATE and RT_GLOBAL_UP_MAX_RATE env vars in docker-compose
+# Or uncomment and adjust these lines:
+# throttle.global_down.max_rate.set_kb = 0    # 0 = unlimited
+# throttle.global_up.max_rate.set_kb = 3072   # 3MB/s upload limit (increased)
+
+### Memory & Performance - SSD Optimized for More Torrents ###
+# Memory allocation (increased for more torrents)
+pieces.memory.max.set = 3072M
+
+# File allocation (disabled for SSD efficiency)
+system.file.allocate.set = 0
+system.file.max_size.set = 200G
+
+# Aggressive preloading for SSD performance
+pieces.preload.type.set = 2
+pieces.preload.min_size.set = 1048576
+pieces.preload.min_rate.set = 51200
+
+### Hash Checking & SSD Optimization ###
+# Enable hash checking for data integrity
+pieces.hash.on_completion.set = yes
+
+# SSD-optimized sync settings
+pieces.sync.always_safe.set = no
+pieces.sync.timeout.set = 600
+pieces.sync.timeout_safe.set = 900
+
+### Protocol Settings ###
+# Encryption for privacy (important with VPN)
+protocol.encryption.set = allow_incoming,try_outgoing,enable_retry
+
+# Enable peer exchange and UDP trackers
+protocol.pex.set = yes
+trackers.use_udp.set = yes
+
+# Tracker settings optimized for many torrents (increased)
+trackers.numwant.set = 100
+
+### DHT Configuration ###
+# Enable DHT for better peer discovery
+dht.mode.set = auto
+dht.port.set = 6881
+
+### Advanced Performance Tuning - Enhanced for 50 Torrents ###
+# Optimize for large files (movies)
+
+# Network optimizations (increased limits)
+network.max_open_files.set = 3072
+network.tos.set = throughput
+network.max_open_sockets.set = 2048
+network.http.max_open.set = 256
+
+# Network buffer sizes (increased for better throughput)
+network.send_buffer.size.set = 12M
+network.receive_buffer.size.set = 12M
+
+# XMLRPC size limit (increased)
+network.xmlrpc.size_limit.set = 64M
+
+### Watch Directory ###
+# Auto-load torrents with 5-second intervals
+schedule2 = watch_directory, 5, 5, ((load.start, (cat, (cfg.watch), "*.torrent")))
+
+### File Movement on Completion ###
+# Move completed downloads to complete folder
+method.insert = d.get_finished_dir, simple, "cat=(cfg.download_complete)"
+method.set_key = event.download.finished, move_complete, "d.directory.set=$d.get_finished_dir=; execute=mkdir,-p,$d.get_finished_dir=; execute=mv,-u,$d.base_path=,$d.get_finished_dir=; d.base_path.set=(cfg.download_complete)"
+
+### Disk Space Management ###
+# Stop torrents when disk space is low (15GB threshold for more movies)
+schedule2 = low_diskspace, 60, 300, ((close_low_diskspace, 15000M))
+
+### Ratio Management ###
+# Stop seeding at 2.0 ratio or after 7 days (adjust as needed)
+method.insert = d.get_ratio, simple, "math.div=d.up.total=,d.size_bytes="
+schedule2 = ratio_check, 300, 600, "stop_on_ratio=200,604800"
+
+### Email Notifications (via Python script) ###
+
+# New torrent added
+method.set_key = event.download.inserted_new,notify_torrent_added,"execute={/data/scripts/notification_agent.py,added,$d.name=,$d.directory=,$d.size_bytes=,$d.hash=}"
+
+# Torrent completed
+method.set_key = event.download.finished,notify_torrent_finished,"execute={/data/scripts/notification_agent.py,completed,$d.name=,$d.directory=,$d.size_bytes=,$d.hash=}"
+
+### Logging ###
+log.open_file = "rtorrent", (cat, (cfg.logs), "rtorrent.log")
+log.add_output = "info", "rtorrent"
