@@ -8,13 +8,13 @@ and configurable delays between operations.
 
 Environment Variables:
     TORRENT_DIR         - Directory containing .torrent files (default: /torrents)
-    STATE_FILE          - Path to state JSON file (default: /data/rotator_state.json)
+    STATE_FILE          - Path to state JSON file (default: /states/route23_state.json)
     RTORRENT_URL        - rtorrent XMLRPC endpoint (default: http://localhost:8080/RPC2)
     RTORRENT_USER       - rtorrent username for authentication (optional)
     RTORRENT_PASS       - rtorrent password for authentication (optional)
     BATCH_SIZE          - Number of torrents per batch (default: 20)
     ROTATION_DAYS       - Days between rotations (default: 14)
-    DOWNLOAD_DIR        - Download directory for torrent data (default: /downloads)
+    DOWNLOAD_DIR        - Download directory for torrent data (default: /downloads/route23)
 
     Performance Settings:
     ADD_DELAY           - Seconds to wait between adding torrents (default: 30)
@@ -100,11 +100,11 @@ def build_rtorrent_url() -> str:
 
 CONFIG = {
     "torrent_dir": get_env("TORRENT_DIR", "/torrents"),
-    "state_file": get_env("STATE_FILE", "/data/rotator_state.json"),
+    "state_file": get_env("STATE_FILE", "/states/route23_state.json"),
     "rtorrent_url": build_rtorrent_url(),
     "batch_size": get_env_int("BATCH_SIZE", 20),
     "rotation_days": get_env_int("ROTATION_DAYS", 14),
-    "download_dir": get_env("DOWNLOAD_DIR", "/downloads"),
+    "download_dir": get_env("DOWNLOAD_DIR", "/downloads/route23"),
     "add_delay": get_env_float("ADD_DELAY", 30.0),
     "remove_delay": get_env_float("REMOVE_DELAY", 5.0),
     "max_load": get_env_float("MAX_LOAD", 4.0),

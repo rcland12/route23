@@ -635,7 +635,7 @@ Set up a daily cron job to check for rotation automatically:
 crontab -e
 
 # Add this line to check daily at 3am
-0 3 * * * cd /path/to/route23 && docker compose run --rm app >> ./logs/rotator.log 2>&1
+0 3 * * * cd /path/to/route23 && docker compose run --rm app >> ./logs/route23.log 2>&1
 ```
 
 **How Automation Works:**
@@ -650,13 +650,13 @@ crontab -e
 
 ```bash
 # Check every 12 hours
-0 */12 * * * cd /path/to/route23 && docker compose run --rm app >> ./logs/rotator.log 2>&1
+0 */12 * * * cd /path/to/route23 && docker compose run --rm app >> ./logs/route23.log 2>&1
 
 # Check weekly (Sundays at 3am)
-0 3 * * 0 cd /path/to/route23 && docker compose run --rm app >> ./logs/rotator.log 2>&1
+0 3 * * 0 cd /path/to/route23 && docker compose run --rm app >> ./logs/route23.log 2>&1
 
 # Check twice daily (3am and 3pm)
-0 3,15 * * * cd /path/to/route23 && docker compose run --rm app >> ./logs/rotator.log 2>&1
+0 3,15 * * * cd /path/to/route23 && docker compose run --rm app >> ./logs/route23.log 2>&1
 ```
 
 ### Configuration Options
@@ -849,6 +849,8 @@ route23/
 │   └── torrents/           # Place .torrent files here
 ├── downloads/              # Downloaded content
 │   └── complete/           # Completed downloads
+│   └── temp/               # Temporary downloads
+│   └── route23/            # Downloads in rotation
 ├── docs/                   # VPN providers setup instructions
 └── logs/                   # Log files (create this)
 ```

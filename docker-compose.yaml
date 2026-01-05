@@ -20,10 +20,10 @@ services:
       RTORRENT_URL: http://vpn:8080/plugins/httprpc/action.php
       RTORRENT_USER: ${RTORRENT_USER}
       RTORRENT_PASS: ${RTORRENT_PASS}
-      STATE_FILE: /data/rotator_state.json
-      DOWNLOAD_DIR: /downloads
+      STATE_FILE: /states/route23_state.json
+      DOWNLOAD_DIR: /downloads/route23
       BATCH_SIZE: 10
-      ROTATION_DAYS: 14
+      ROTATION_DAYS: 30
       ADD_DELAY: 30
       REMOVE_DELAY: 5
       MAX_LOAD: 4.0
@@ -35,8 +35,7 @@ services:
       LOG_LEVEL: INFO
     volumes:
       - ./rutorrent/torrents:/torrents:ro
-      - ./rutorrent/data:/data
-      - ./rutorrent/downloads/route23:/downloads
+      - ./rutorrent/data/states:/states
       - /proc/loadavg:/proc/loadavg:ro
 
   nginx:
