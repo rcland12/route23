@@ -3,6 +3,8 @@
 # Container: CrazyMax rtorrent-rutorrent
 #############################################################################
 
+directory.default.set = /downloads/route23
+
 ### Connection Limits - Scaled for 50 torrents ###
 # Global upload limits (increased from 40)
 throttle.max_uploads.global.set = 75
@@ -87,9 +89,7 @@ network.xmlrpc.size_limit.set = 64M
 schedule2 = watch_directory, 5, 5, ((load.start, (cat, (cfg.watch), "*.torrent")))
 
 ### File Movement on Completion ###
-# Move completed downloads to complete folder
 method.insert = d.get_finished_dir, simple, "cat=(cfg.download_complete)"
-method.set_key = event.download.finished, move_complete, "d.directory.set=$d.get_finished_dir=; execute=mkdir,-p,$d.get_finished_dir=; execute=mv,-u,$d.base_path=,$d.get_finished_dir=; d.base_path.set=(cfg.download_complete)"
 
 ### Disk Space Management ###
 # Stop torrents when disk space is low (15GB threshold for more movies)
@@ -101,11 +101,7 @@ method.insert = d.get_ratio, simple, "math.div=d.up.total=,d.size_bytes="
 schedule2 = ratio_check, 300, 600, "stop_on_ratio=200,604800"
 
 ### Email Notifications (via Python script) ###
-
-# New torrent added
 method.set_key = event.download.inserted_new,notify_torrent_added,"execute={/data/scripts/notification_agent.py,added,$d.name=,$d.directory=,$d.size_bytes=,$d.hash=}"
-
-# Torrent completed
 method.set_key = event.download.finished,notify_torrent_finished,"execute={/data/scripts/notification_agent.py,completed,$d.name=,$d.directory=,$d.size_bytes=,$d.hash=}"
 
 ### Logging ###

@@ -23,7 +23,7 @@ services:
       STATE_FILE: /states/route23_state.json
       DOWNLOAD_DIR: /downloads/route23
       BATCH_SIZE: 10
-      ROTATION_DAYS: 30
+      ROTATION_DAYS: 14
       ADD_DELAY: 30
       REMOVE_DELAY: 5
       MAX_LOAD: 4.0
