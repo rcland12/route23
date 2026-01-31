@@ -26,4 +26,7 @@ ENV DELETE_DATA=false
 ENV SHOW_STATUS=false
 ENV LOG_LEVEL=INFO
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=1s --retries=1 \
+    CMD python -c "import sys; sys.exit(0)"
+
 ENTRYPOINT ["python", "main.py"]
