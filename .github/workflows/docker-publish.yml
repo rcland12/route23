@@ -5,9 +5,9 @@ on:
     branches:
       - master
     paths:
-      - 'VERSION'
-      - 'Dockerfile'
-      - 'src/**'
+      - "VERSION"
+      - "Dockerfile"
+      - "src/**"
 
 jobs:
   build-and-push:
@@ -19,7 +19,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Read VERSION file
         id: version
@@ -54,7 +54,7 @@ jobs:
 
       - name: Build and push Docker image
         id: build
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: true
@@ -67,12 +67,12 @@ jobs:
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ghcr.io/${{ github.repository }}:${{ steps.version.outputs.VERSION }}
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          severity: 'CRITICAL,HIGH,MEDIUM'
+          format: "sarif"
+          output: "trivy-results.sarif"
+          severity: "CRITICAL,HIGH,MEDIUM"
 
       - name: Upload Trivy results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
-          sarif_file: 'trivy-results.sarif'
-          category: 'container-scan'
+          sarif_file: "trivy-results.sarif"
+          category: "container-scan"
