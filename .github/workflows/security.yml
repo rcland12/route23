@@ -157,7 +157,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.14'
+          python-version: "3.14"
 
       - name: Install Bandit
         run: pip install bandit[sarif]
@@ -189,7 +189,7 @@ jobs:
           category: bandit
 
   shellcheck-scan:
-    name: ShellCheck shell script analysis
+    name: ShellCheck (SARIF)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -199,20 +199,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Run ShellCheck
-        uses: ludeeus/action-shellcheck@master
+      - name: ShellCheck scan (SARIF)
+        uses: reactive-firewall/shellcheck-scan@v1
         with:
-          scandir: './exe'
-          severity: warning
-          format: sarif
-        continue-on-error: true
-
-      - name: Upload ShellCheck results
-        uses: github/codeql-action/upload-sarif@v4
-        if: always()
-        with:
-          sarif_file: shellcheck.sarif
-          category: shellcheck
+          match: "exe/**"
+          severity: "warning"
+          publish-artifacts: true
 
   scorecard-analysis:
     name: OpenSSF Scorecard analysis
