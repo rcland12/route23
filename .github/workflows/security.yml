@@ -196,15 +196,31 @@ jobs:
       security-events: write
 
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v6
 
-      - name: ShellCheck scan (SARIF)
-        uses: reactive-firewall/shellcheck-scan@v1
+      - name: Install ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: Run ShellCheck (json1)
+        run: |
+          find ./exe -type f -maxdepth 2 -print0 \
+            | xargs -0 shellcheck --severity=warning --format=json1 \
+            > shellcheck.json
+
+      - name: Convert json1 -> SARIF
+        uses: docker://ghcr.io/shellcheck-sarif/shellcheck-sarif:latest
         with:
-          match: "exe/**"
-          severity: "warning"
-          publish-artifacts: true
+          args: sh -lc "cat shellcheck.json | shellcheck-sarif > shellcheck.sarif"
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: shellcheck.sarif
+          category: shellcheck
 
   scorecard-analysis:
     name: OpenSSF Scorecard analysis
