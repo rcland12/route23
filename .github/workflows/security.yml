@@ -52,14 +52,14 @@ jobs:
           severity: CRITICAL,HIGH,MEDIUM,LOW
 
       - name: Upload Trivy SARIF results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: trivy-sarif-results
           path: trivy-results.sarif
           retention-days: 30
 
       - name: Upload Trivy table results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: trivy-table-results
           path: trivy-results.txt
@@ -124,14 +124,14 @@ jobs:
           scanners: secret,config,license
 
       - name: Upload Trivy filesystem SARIF results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: trivy-fs-sarif-results
           path: trivy-fs-results.sarif
           retention-days: 30
 
       - name: Upload Trivy filesystem table results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: trivy-fs-table-results
           path: trivy-fs-results.txt
@@ -169,14 +169,14 @@ jobs:
         run: bandit -r src/ -f txt -o bandit-results.txt --severity-level medium --exit-zero
 
       - name: Upload Bandit SARIF results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: bandit-sarif-results
           path: bandit-results.sarif
           retention-days: 30
 
       - name: Upload Bandit text results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: bandit-text-results
           path: bandit-results.txt
@@ -229,7 +229,7 @@ jobs:
           publish_results: true
 
       - name: Upload Scorecard results as artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: scorecard-sarif-results
           path: scorecard-results.sarif
