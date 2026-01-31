@@ -1,4 +1,4 @@
-FROM python:3.11-alpine
+FROM python:3.14-alpine
 
 LABEL maintainer="Russell Land"
 LABEL project="route23"

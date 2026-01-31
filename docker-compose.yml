@@ -1,19 +1,20 @@
 name: route23
 
 networks:
-  nginx:
+  route23:
     driver: bridge
 
 services:
   app:
     container_name: route23
+    image: rcland12/route23:latest
     build: .
     restart: "no"
     depends_on:
       rutorrent:
         condition: service_healthy
     networks:
-      - nginx
+      - route23
     environment:
       TZ: ${TIMEZONE}
       TORRENT_DIR: /torrents
@@ -46,7 +47,7 @@ services:
       rutorrent:
         condition: service_healthy
     networks:
-      - nginx
+      - route23
     ports:
       - 8080:80
     volumes:
@@ -95,7 +96,7 @@ services:
     image: qmcgaw/gluetun:latest
     restart: unless-stopped
     networks:
-      - nginx
+      - route23
     ports:
       - "6881:6881"
       - "6881:6881/udp"
@@ -107,6 +108,12 @@ services:
       SERVER_COUNTRIES: "United States"
       SERVER_CATEGORIES: "P2P"
       FIREWALL_OUTBOUND_SUBNETS: ${PRIVATE_SUBNET}
+      DNS_SERVER: "on"
+      DNS_ADDRESS: "127.0.0.1"
+      DNS_UPSTREAM_RESOLVER_TYPE: "plain"
+      DNS_UPSTREAM_RESOLVERS: "cloudflare"
+      DNS_UPSTREAM_IPV6: "off"
+      DNS_CACHING: "on"
       TZ: ${TIMEZONE}
     cap_add:
       - NET_ADMIN
@@ -115,24 +122,24 @@ services:
     healthcheck:
       test: ["CMD", "/gluetun-entrypoint", "healthcheck"]
       interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
+      timeout: 20s
+      retries: 5
+      start_period: 20s
 
   postfix:
     container_name: route23-postfix
     image: boky/postfix:latest
     restart: unless-stopped
     networks:
-      - nginx
+      - route23
     ports:
       - "127.0.0.1:2525:25"
     environment:
       RELAYHOST: "[smtp.gmail.com]:587"
       RELAYHOST_USERNAME: ${POSTFIX_EMAIL}
       RELAYHOST_PASSWORD: ${POSTFIX_PASSWORD}
-      HOSTNAME: mail.website.com
-      ALLOWED_SENDER_DOMAINS: rustypi3 localhost website.com
+      HOSTNAME: ${POSTFIX_HOSTNAME}
+      ALLOWED_SENDER_DOMAINS: ${POSTFIX_ALLOWED_SENDER_DOMAINS}
       MYNETWORKS: "127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16"
       POSTFIX_message_size_limit: 52428800
       SMTP_HEADER_CHECKS: "regexp:/etc/postfix/smtp_header_checks"

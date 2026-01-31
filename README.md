@@ -57,7 +57,7 @@
 
 route23 is a self-hosted, Docker-based automated torrent rotation system designed for low-power devices like Raspberry Pi.
 
-**Why "route23"?** The name comes from the 23 different VPN providers supported through Gluetun integration - offering you flexibility to choose the VPN service that best fits your needs, whether that's port forwarding support, privacy features, or price.
+**Why "route23"?** The name comes from the 23 different VPN providers supported through Gluetun integration - offering you flexibility to choose the VPN service that best fits your needs, whether that's port forwarding support, privacy features, or price. It's also a major US Highway that runs from Michigan to Florida that I frequently drive on.
 
 **What it does:** route23 automatically manages your torrent seeding by rotating through your collection in batches. Instead of trying to seed hundreds or thousands of torrents simultaneously (which would overwhelm most hardware), route23 intelligently seeds small batches for configurable periods, then automatically cycles to the next batch. Over time, your entire collection gets seeded fairly and efficiently.
 
@@ -221,11 +221,16 @@ RTORRENT_PASS=your_password              # Web UI password
 # Email Notifications (optional)
 POSTFIX_EMAIL=youremail@gmail.com        # Your email address
 POSTFIX_PASSWORD=your_app_password       # Email app password
+POSTFIX_HOSTNAME=mail.website.com        # Your domain (optional)
+
+# Make sure your HOSTNAME domain is in this list, e.g. website.com)
+POSTFIX_ALLOWED_SENDER_DOMAINS="rustypi3 localhost website.com" # List of allowed domains
 ```
 
 **Get your VPN credentials:** See [VPN Configuration](#vpn-configuration) for provider-specific setup guides.
 
 **Find your private subnet:**
+
 ```bash
 ip route show | awk '/proto kernel/ && /192\.168\./ {print $1}'
 ```
@@ -901,9 +906,3 @@ Contributions are welcome! Please open an issue or submit a pull request.
 ## License
 
 This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
-
----
-
-<p align="center">
-  Made for the self-hosting community
-</p>
