@@ -1,0 +1,106 @@
+name: Security Scanning
+
+on:
+  workflow_run:
+    workflows: ["Build and Push Docker Image"]
+    types:
+      - completed
+  schedule:
+    - cron: "0 4 * * 0"
+  workflow_dispatch:
+
+permissions: read-all
+
+jobs:
+  container-scan:
+    name: Container vulnerability scan
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' }}
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Read VERSION file
+        id: version
+        run: echo "VERSION=$(cat VERSION)" >> $GITHUB_OUTPUT
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run Trivy vulnerability scanner (SARIF)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ghcr.io/${{ github.repository }}:${{ steps.version.outputs.VERSION }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH,MEDIUM
+
+      - name: Run Trivy vulnerability scanner (Table)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ghcr.io/${{ github.repository }}:${{ steps.version.outputs.VERSION }}
+          format: table
+          output: trivy-results.txt
+          severity: CRITICAL,HIGH,MEDIUM,LOW
+
+      - name: Upload Trivy SARIF results
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-sarif-results
+          path: trivy-results.sarif
+          retention-days: 30
+
+      - name: Upload Trivy table results
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-table-results
+          path: trivy-results.txt
+          retention-days: 30
+
+      - name: Upload SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-results.sarif
+          category: container-scan
+
+  scorecard-analysis:
+    name: OpenSSF Scorecard analysis
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Run OpenSSF Scorecard
+        uses: ossf/scorecard-action@v2.4.3
+        with:
+          results_file: scorecard-results.sarif
+          results_format: sarif
+          publish_results: true
+
+      - name: Upload Scorecard results as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: scorecard-sarif-results
+          path: scorecard-results.sarif
+          retention-days: 30
+
+      - name: Upload SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: scorecard-results.sarif
+          category: scorecard
