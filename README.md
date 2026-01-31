@@ -224,7 +224,7 @@ POSTFIX_PASSWORD=your_app_password       # Email app password
 POSTFIX_HOSTNAME=mail.website.com        # Your domain (optional)
 
 # Make sure your HOSTNAME domain is in this list, e.g. website.com)
-POSTFIX_ALLOWED_SENDER_DOMAINS="rustypi3 localhost website.com" # List of allowed domains
+POSTFIX_ALLOWED_SENDER_DOMAINS="servername localhost website.com" # List of allowed domains
 ```
 
 **Get your VPN credentials:** See [VPN Configuration](#vpn-configuration) for provider-specific setup guides.
