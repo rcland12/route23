@@ -11,6 +11,24 @@
   <strong>Automated torrent seeding with VPN protection and intelligent rotation</strong>
 </p>
 
+<p align="center">
+  <a href="https://github.com/rcland12/route23/actions/workflows/docker-publish.yml">
+    <img src="https://github.com/rcland12/route23/actions/workflows/docker-publish.yml/badge.svg" alt="Build and Security Scan">
+  </a>
+  <a href="https://hub.docker.com/r/rcland12/route23">
+    <img src="https://img.shields.io/docker/pulls/rcland12/route23?logo=docker" alt="Docker Pulls">
+  </a>
+  <a href="https://hub.docker.com/r/rcland12/route23">
+    <img src="https://img.shields.io/docker/v/rcland12/route23?logo=docker&label=version" alt="Docker Version">
+  </a>
+  <a href="https://github.com/rcland12/route23/pkgs/container/route23">
+    <img src="https://img.shields.io/badge/ghcr-image-blue?logo=github" alt="GHCR">
+  </a>
+  <a href="https://securityscorecards.dev/viewer/?uri=github.com/rcland12/route23">
+    <img src="https://api.securityscorecards.dev/projects/github.com/rcland12/route23/badge" alt="OpenSSF Scorecard">
+  </a>
+</p>
+
 ---
 
 ## Table of Contents
