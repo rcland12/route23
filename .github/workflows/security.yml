@@ -71,6 +71,149 @@ jobs:
           sarif_file: trivy-results.sarif
           category: container-scan
 
+  codeql-analysis:
+    name: CodeQL source code analysis
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: python
+          queries: security-and-quality
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: codeql-python
+
+  filesystem-scan:
+    name: Trivy filesystem scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Run Trivy filesystem scan (SARIF)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-fs-results.sarif
+          scanners: secret,config,license
+
+      - name: Run Trivy filesystem scan (Table)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: table
+          output: trivy-fs-results.txt
+          scanners: secret,config,license
+
+      - name: Upload Trivy filesystem SARIF results
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-fs-sarif-results
+          path: trivy-fs-results.sarif
+          retention-days: 30
+
+      - name: Upload Trivy filesystem table results
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-fs-table-results
+          path: trivy-fs-results.txt
+          retention-days: 30
+
+      - name: Upload SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-fs-results.sarif
+          category: filesystem-scan
+
+  bandit-scan:
+    name: Bandit Python security scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - name: Install Bandit
+        run: pip install bandit[sarif]
+
+      - name: Run Bandit scan
+        run: bandit -r src/ -f sarif -o bandit-results.sarif --severity-level medium --exit-zero
+
+      - name: Run Bandit scan (text output)
+        run: bandit -r src/ -f txt -o bandit-results.txt --severity-level medium --exit-zero
+
+      - name: Upload Bandit SARIF results
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-sarif-results
+          path: bandit-results.sarif
+          retention-days: 30
+
+      - name: Upload Bandit text results
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-text-results
+          path: bandit-results.txt
+          retention-days: 30
+
+      - name: Upload SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: bandit-results.sarif
+          category: bandit
+
+  shellcheck-scan:
+    name: ShellCheck shell script analysis
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: './exe'
+          severity: warning
+          format: sarif
+        continue-on-error: true
+
+      - name: Upload ShellCheck results
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: shellcheck.sarif
+          category: shellcheck
+
   scorecard-analysis:
     name: OpenSSF Scorecard analysis
     runs-on: ubuntu-latest
