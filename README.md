@@ -35,6 +35,7 @@
 
 - [Overview](#overview)
 - [Features](#features)
+- [Quick Start](#quick-start)
 - [Architecture](#architecture)
 - [Prerequisites](#prerequisites)
 - [VPN Configuration](#vpn-configuration)
@@ -97,6 +98,54 @@ route23 is a self-hosted, Docker-based automated torrent rotation system designe
 - **Web Interface** — Full ruTorrent UI for manual torrent management
 - **Email Notifications** — SMTP relay for torrent completion alerts (optional)
 - **Docker-Based** — Easy deployment and management with docker-compose
+
+## Quick Start
+
+Get up and running with route23 in 5 steps:
+
+**1. Prerequisites**
+- Docker and Docker Compose installed
+- A VPN subscription with one of the 23 supported providers
+- Your local network subnet (usually `192.168.1.0/24` or `192.168.0.0/24`)
+
+**2. Clone and Configure**
+```bash
+git clone https://github.com/rcland12/route23.git
+cd route23
+cp .env.example .env  # Create your configuration file
+```
+
+**3. Get Your Credentials**
+
+Before editing `.env`, gather these credentials:
+
+| What You Need | Where to Get It | Notes |
+|---------------|----------------|-------|
+| VPN credentials | Your VPN provider dashboard | See [VPN Configuration](#vpn-configuration) for detailed guides |
+| Local network subnet | Run: `ip route show \| awk '/proto kernel/ && /192\\.168\\./ {print $1}'` | Usually `192.168.1.0/24` or `192.168.0.0/24` |
+| Email credentials (optional) | Your email provider | See [Email Notifications](#email-notifications-optional) for setup |
+
+**4. Edit Configuration**
+
+Open `.env` and fill in your values (see [Installation](#installation) for detailed explanations).
+
+**5. Start Services**
+```bash
+# Install htpasswd tool if needed
+sudo apt update && sudo apt install apache2-utils
+
+# Create web UI credentials (choose your own username/password)
+htpasswd -Bbn your_username your_password > ./rutorrent/passwd/rutorrent.htpasswd
+
+# Start the services
+docker compose up -d nginx
+
+# Access web UI at http://<your-server-ip>:8080
+```
+
+That's it! Your route23 instance is running. Add `.torrent` files to `./rutorrent/torrents/` and run your first rotation with `docker compose run --rm app`.
+
+For detailed configuration options and advanced features, continue reading below.
 
 ## Architecture
 
@@ -217,59 +266,144 @@ git clone https://github.com/rcland12/route23.git
 cd route23
 ```
 
-### 2. Create Environment File
+### 2. Gather Required Information
 
-Create a `.env` file with all required variables:
+Before creating your `.env` file, you'll need to collect the following information:
 
-```bash
-# VPN Configuration (required)
-VPN_SERVICE="nordvpn"                    # Your VPN provider
-NORDVPN_TOKEN=your_token_here            # Provider-specific token/credentials
-WIREGUARD_PRIVATE_KEY=your_key_here      # Get from VPN provider API
-PRIVATE_SUBNET="192.168.0.0/24"          # Your local network subnet
+#### VPN Credentials (Required)
 
-# System Configuration (required)
-TIMEZONE="America/New_York"              # Your timezone
-SERVER_NAME="route23"                    # Server hostname
+Your VPN provider will give you credentials needed for Gluetun. Each provider is different:
 
-# ruTorrent Authentication (required)
-RTORRENT_USER=your_username              # Web UI username
-RTORRENT_PASS=your_password              # Web UI password
+- **NordVPN**: Access token from account dashboard
+- **Private Internet Access**: Username and password
+- **ProtonVPN**: OpenVPN/WireGuard credentials
+- **Other providers**: See [VPN Configuration](#vpn-configuration) for detailed guides
 
-# Email Notifications (optional)
-POSTFIX_EMAIL=youremail@gmail.com        # Your email address
-POSTFIX_PASSWORD=your_app_password       # Email app password
-POSTFIX_HOSTNAME=mail.website.com        # Your domain (optional)
+Click your VPN provider in the [Supported VPN Providers](#supported-vpn-providers) table for specific instructions on obtaining these credentials.
 
-# Make sure your HOSTNAME domain is in this list, e.g. website.com)
-POSTFIX_ALLOWED_SENDER_DOMAINS="servername localhost website.com" # List of allowed domains
-```
+#### Local Network Subnet (Required)
 
-**Get your VPN credentials:** See [VPN Configuration](#vpn-configuration) for provider-specific setup guides.
-
-**Find your private subnet:**
+Your local network subnet allows route23 to communicate with your host machine. Find yours with:
 
 ```bash
 ip route show | awk '/proto kernel/ && /192\.168\./ {print $1}'
 ```
 
-### 3. Create ruTorrent Authentication File
+Common values are `192.168.1.0/24`, `192.168.0.0/24`, or `10.0.0.0/24`. If the command returns nothing, try:
+
+```bash
+ip -4 addr show | grep inet | grep -v 127.0.0.1 | awk '{print $2}'
+```
+
+#### Web UI Credentials (Required)
+
+Choose a username and password for accessing the ruTorrent web interface. These are credentials you create yourself - pick something secure. You'll need these in step 3.
+
+#### Email Credentials (Optional)
+
+If you want email notifications for torrent completion, you'll need:
+
+- Your email address
+- An app-specific password from your email provider
+
+See [Email Notifications](#email-notifications-optional) for provider-specific instructions on generating app passwords for Gmail, Outlook, Yahoo, iCloud, and others.
+
+### 3. Create Environment File
+
+Create a `.env` file in the route23 directory with your configuration:
+
+```bash
+# ============================================
+# VPN Configuration (Required)
+# ============================================
+# Get these credentials from your VPN provider dashboard
+# See VPN Configuration section for provider-specific guides
+
+VPN_SERVICE="nordvpn"                    # Your VPN provider name
+NORDVPN_TOKEN=your_token_here            # Replace with your VPN token/username
+WIREGUARD_PRIVATE_KEY=your_key_here      # Replace with your WireGuard private key
+
+# ============================================
+# Network Configuration (Required)
+# ============================================
+# Find your subnet with: ip route show | awk '/proto kernel/ && /192\.168\./ {print $1}'
+# Common values: 192.168.1.0/24, 192.168.0.0/24, 10.0.0.0/24
+
+PRIVATE_SUBNET="192.168.0.0/24"          # Replace with YOUR local network subnet
+
+# ============================================
+# System Configuration (Required)
+# ============================================
+
+TIMEZONE="America/New_York"              # Your timezone (e.g., America/Chicago, Europe/London)
+SERVER_NAME="route23"                    # Hostname for your server (can be anything)
+
+# ============================================
+# ruTorrent Web UI Credentials (Required)
+# ============================================
+# CREATE YOUR OWN username and password here
+# You'll use these in Step 4 with htpasswd command
+# You'll also use these to login to the web UI
+
+RTORRENT_USER=your_username              # Choose your own username
+RTORRENT_PASS=your_password              # Choose your own password
+
+# ============================================
+# Email Notifications (Optional)
+# ============================================
+# Leave blank or comment out if you don't want email notifications
+# See Email Notifications section for provider setup guides
+
+POSTFIX_EMAIL=youremail@gmail.com        # Your email address
+POSTFIX_PASSWORD=your_app_password       # App password from email provider (not your regular password)
+POSTFIX_HOSTNAME=mail.website.com        # Optional: Your domain name
+POSTFIX_ALLOWED_SENDER_DOMAINS="servername localhost website.com"  # Add your domain if using POSTFIX_HOSTNAME
+```
+
+### 4. Create ruTorrent Authentication File
+
+Create the authentication file using the SAME username and password you specified in `.env` above:
 
 ```bash
 # Install htpasswd if needed
 sudo apt update && sudo apt install apache2-utils
 
-# Create authentication file (must match RTORRENT_USER/RTORRENT_PASS from .env)
+# Create authentication file
+# Replace your_username and your_password with the values from RTORRENT_USER and RTORRENT_PASS in .env
 htpasswd -Bbn your_username your_password > ./rutorrent/passwd/rutorrent.htpasswd
 ```
 
-### 4. Start Services
+**Important:** The username and password here MUST match `RTORRENT_USER` and `RTORRENT_PASS` from your `.env` file.
+
+### 5. Start Services
 
 ```bash
 docker compose up -d nginx
 ```
 
-Access the web UI at `http://<your-server-ip>:8080` using the credentials you created above.
+Wait for containers to start (30-60 seconds), then access the web UI at `http://<your-server-ip>:8080` using the credentials you created in steps 3 and 4.
+
+### 6. Verify Setup
+
+Check that all containers are running:
+
+```bash
+docker compose ps
+```
+
+You should see:
+- `route23-nginx` (running)
+- `route23-rutorrent` (running)
+- `route23-vpn` (running)
+- `route23-postfix` (running, if configured)
+
+Test VPN connection:
+
+```bash
+docker compose exec vpn curl -s https://am.i.mullvad.net/connected
+```
+
+Should return: "You are connected to Mullvad" or similar message indicating VPN is active.
 
 ## Email Notifications (Optional)
 
