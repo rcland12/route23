@@ -62,6 +62,7 @@ services:
   rutorrent:
     container_name: route23-rutorrent
     image: crazymax/rtorrent-rutorrent:latest
+    restart: unless-stopped
     network_mode: "service:vpn"
     depends_on:
       vpn:
@@ -89,7 +90,6 @@ services:
       - ./rutorrent/data:/data
       - ./rutorrent/downloads:/downloads
       - ./rutorrent/passwd:/passwd
-    restart: unless-stopped
 
   vpn:
     container_name: route23-vpn
