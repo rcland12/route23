@@ -201,7 +201,7 @@ jobs:
 
       - name: ShellCheck scan
         continue-on-error: true
-        uses: reactive-firewall/shellcheck-scan@v1
+        uses: reactive-firewall/shellcheck-scan@v2
         with:
           match: "exe/**"
           severity: "warning"
