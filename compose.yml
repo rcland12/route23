@@ -37,6 +37,7 @@ services:
     volumes:
       - ./rutorrent/torrents:/torrents:ro
       - ./rutorrent/data/states:/states
+      - ./rutorrent/downloads:/downloads
       - /proc/loadavg:/proc/loadavg:ro
 
   nginx:

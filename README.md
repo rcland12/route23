@@ -104,11 +104,13 @@ route23 is a self-hosted, Docker-based automated torrent rotation system designe
 Get up and running with route23 in 5 steps:
 
 **1. Prerequisites**
+
 - Docker and Docker Compose installed
 - A VPN subscription with one of the 23 supported providers
 - Your local network subnet (usually `192.168.1.0/24` or `192.168.0.0/24`)
 
 **2. Clone and Configure**
+
 ```bash
 git clone https://github.com/rcland12/route23.git
 cd route23
@@ -119,17 +121,18 @@ cp .env.example .env  # Create your configuration file
 
 Before editing `.env`, gather these credentials:
 
-| What You Need | Where to Get It | Notes |
-|---------------|----------------|-------|
-| VPN credentials | Your VPN provider dashboard | See [VPN Configuration](#vpn-configuration) for detailed guides |
-| Local network subnet | Run: `ip route show \| awk '/proto kernel/ && /192\\.168\\./ {print $1}'` | Usually `192.168.1.0/24` or `192.168.0.0/24` |
-| Email credentials (optional) | Your email provider | See [Email Notifications](#email-notifications-optional) for setup |
+| What You Need                | Where to Get It                                              | Notes                                                              |
+| ---------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------ |
+| VPN credentials              | Your VPN provider dashboard                                  | See [VPN Configuration](#vpn-configuration) for detailed guides    |
+| Local network subnet         | Run: `ip route \| awk '$1 ~ /^192\.168\./ {print $1; exit}'` | Usually `192.168.1.0/24` or `192.168.0.0/24`                       |
+| Email credentials (optional) | Your email provider                                          | See [Email Notifications](#email-notifications-optional) for setup |
 
 **4. Edit Configuration**
 
 Open `.env` and fill in your values (see [Installation](#installation) for detailed explanations).
 
 **5. Start Services**
+
 ```bash
 # Install htpasswd tool if needed
 sudo apt update && sudo apt install apache2-utils
@@ -392,6 +395,7 @@ docker compose ps
 ```
 
 You should see:
+
 - `route23-nginx` (running)
 - `route23-rutorrent` (running)
 - `route23-vpn` (running)

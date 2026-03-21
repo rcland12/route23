@@ -25,7 +25,7 @@ Environment Variables:
 
     Action Flags:
     FORCE_ROTATION      - Set to "true" to force rotation (default: false)
-    DELETE_DATA         - Set to "true" to delete data on rotation (default: false)
+    DELETE_DATA         - Set to "true" to delete downloaded files on rotation (default: false)
     SHOW_STATUS         - Set to "true" to only show status (default: false)
     LOG_LEVEL           - Logging level: DEBUG, INFO, WARNING, ERROR (default: INFO)
 """
@@ -34,6 +34,7 @@ import hashlib
 import json
 import logging
 import os
+import shutil
 import time
 import xmlrpc.client
 from datetime import datetime, timedelta
@@ -228,21 +229,45 @@ class TorrentRotator:
     def remove_torrent(
         self, info_hash: str, delete_data: bool = False
     ) -> bool:
-        """Remove a torrent from rtorrent."""
+        """Remove a torrent from rtorrent, optionally deleting downloaded files."""
         try:
+            base_path = None
             if delete_data:
-                self.rtorrent.d.stop(info_hash)
-                self.rtorrent.d.close(info_hash)
-                self.rtorrent.d.erase(info_hash)
-            else:
-                self.rtorrent.d.stop(info_hash)
-                self.rtorrent.d.close(info_hash)
-                self.rtorrent.d.erase(info_hash)
+                try:
+                    base_path = self.rtorrent.d.base_path(info_hash)
+                except Exception as e:
+                    logger.warning(
+                        f"Could not get base path for {info_hash[:8]}: {e}"
+                    )
+
+            self.rtorrent.d.stop(info_hash)
+            self.rtorrent.d.close(info_hash)
+            self.rtorrent.d.erase(info_hash)
             logger.info(f"Removed torrent: {info_hash}")
+
+            if delete_data and base_path:
+                self._delete_path(base_path)
+
             return True
         except Exception as e:
             logger.error(f"Failed to remove torrent {info_hash}: {e}")
             return False
+
+    def _delete_path(self, path: str):
+        """Delete a file or directory left behind by a removed torrent."""
+        p = Path(path)
+        if not p.exists():
+            logger.debug(f"Nothing to delete, path does not exist: {path}")
+            return
+        try:
+            if p.is_dir():
+                shutil.rmtree(p)
+                logger.info(f"Deleted directory: {path}")
+            else:
+                p.unlink()
+                logger.info(f"Deleted file: {path}")
+        except Exception as e:
+            logger.error(f"Failed to delete {path}: {e}")
 
     def remove_all_active(self, delete_data: bool = False):
         """Remove all currently active torrents with delays."""
