@@ -8,7 +8,8 @@ ENV UID=1000
 ENV GID=1000
 ENV HOME=/home/route23
 
-RUN addgroup -g 1000 -S ${USER} && \
+RUN apk add --no-cache openssh-client && \
+    addgroup -g 1000 -S ${USER} && \
     adduser -u 1000 -S ${USER} -G ${USER}
 
 COPY --chown=${UID}:${GID} ./src/main.py ${HOME}/main.py
