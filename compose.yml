@@ -110,20 +110,28 @@ services:
     networks:
       - route23
     ports:
-      - "6881:6881"
-      - "6881:6881/udp"
+      - "63213:63213"
+      - "63213:63213/udp"
     environment:
-      NORDVPN_TOKEN: ${NORDVPN_TOKEN}
-      WIREGUARD_PRIVATE_KEY: ${WIREGUARD_PRIVATE_KEY}
-      VPN_SERVICE_PROVIDER: ${VPN_SERVICE}
-      VPN_TYPE: wireguard
-      SERVER_COUNTRIES: "United States"
-      SERVER_CATEGORIES: "P2P"
-      FIREWALL_OUTBOUND_SUBNETS: ${PRIVATE_SUBNET}
-      DNS_UPSTREAM_RESOLVERS: "cloudflare"
+      OPENVPN_USER: ${OPENVPN_USER}
+      OPENVPN_PASSWORD: ${OPENVPN_PASSWORD}
+      VPN_SERVICE_PROVIDER: "custom"
+      VPN_TYPE: "openvpn"
+      OPENVPN_CUSTOM_CONFIG: "/gluetun/airvpn.ovpn"
+      FIREWALL_VPN_INPUT_PORTS: "63213"
+      FIREWALL_OUTBOUND_SUBNETS: "192.168.1.0/24"
+      DNS_UPSTREAM_TYPE: "plain"
+      DNS_UPSTREAM_PLAIN_ADDRESSES: "1.1.1.1:53"
       DNS_UPSTREAM_IPV6: "off"
       DNS_CACHING: "on"
+      BLOCK_MALICIOUS: "off"
+      BLOCK_SURVEILLANCE: "off"
+      BLOCK_ADS: "off"
+      HEALTH_SUCCESS_WAIT_DURATION: "10s"
+      HEALTH_TARGET_ADDRESSES: "1.1.1.1:443"
       TZ: ${TIMEZONE}
+    volumes:
+      - ./gluetun/airvpn:/gluetun
     cap_add:
       - NET_ADMIN
     devices:
@@ -131,9 +139,9 @@ services:
     healthcheck:
       test: ["CMD", "/gluetun-entrypoint", "healthcheck"]
       interval: 30s
-      timeout: 20s
-      retries: 5
-      start_period: 20s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
   postfix:
     container_name: route23-postfix

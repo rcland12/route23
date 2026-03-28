@@ -1,13 +1,17 @@
 .env
-*.torrent
-*.htpasswd
-*.rtorrent
-*.libtorrent_resume
+*.crt
 *.dht_cache
+*.htpasswd
 *.input_history
+*.key
+*.libtorrent_resume
 *.lock
 *.log
+*.ovpn
+*.rtorrent
+*.torrent
 
+gluetun/airvpn/*.json
 rutorrent/data/geoip/
 rutorrent/data/rutorrent/
 rutorrent/data/states/*.json
