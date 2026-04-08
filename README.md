@@ -844,11 +844,12 @@ Configure route23's behavior through environment variables in `docker-compose.ya
 
 #### Advanced Settings
 
-| Variable         | Default | Description                                     |
-| ---------------- | ------- | ----------------------------------------------- |
-| `FORCE_ROTATION` | `false` | Force immediate rotation regardless of time     |
-| `SHOW_STATUS`    | `false` | Display status information only (no changes)    |
-| `LOG_LEVEL`      | `INFO`  | Logging verbosity (DEBUG, INFO, WARNING, ERROR) |
+| Variable         | Default         | Description                                                                           |
+| ---------------- | --------------- | ------------------------------------------------------------------------------------- |
+| `FORCE_ROTATION` | `false`         | Force immediate rotation regardless of time                                           |
+| `SHOW_STATUS`    | `false`         | Display status information only (no changes)                                          |
+| `SORT_ORDER`     | `alphabetical`  | Order to cycle through torrents: `alphabetical`, `reverse`, `random`, `date_added`   |
+| `LOG_LEVEL`      | `INFO`          | Logging verbosity (DEBUG, INFO, WARNING, ERROR)                                       |
 
 **Example Configuration for Heavy Load:**
 

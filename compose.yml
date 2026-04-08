@@ -33,6 +33,7 @@ services:
       FORCE_ROTATION: "false"
       DELETE_DATA: "true"
       SHOW_STATUS: "false"
+      SORT_ORDER: random
       LOG_LEVEL: INFO
       PRELOAD_ENABLED: "true"
       PRELOAD_HOST: ${PRELOAD_HOST}
