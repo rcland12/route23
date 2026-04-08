@@ -27,12 +27,13 @@ services:
       ROTATION_DAYS: 14
       ADD_DELAY: 30
       REMOVE_DELAY: 5
-      MAX_LOAD: 4.0
+      MAX_LOAD: 5.0
       LOAD_WAIT: 30
       STARTUP_DELAY: 10
       FORCE_ROTATION: "false"
       DELETE_DATA: "true"
       SHOW_STATUS: "false"
+      SORT_ORDER: random
       LOG_LEVEL: INFO
       PRELOAD_ENABLED: "true"
       PRELOAD_HOST: ${PRELOAD_HOST}

@@ -27,6 +27,7 @@ Environment Variables:
     FORCE_ROTATION      - Set to "true" to force rotation (default: false)
     DELETE_DATA         - Set to "true" to delete downloaded files on rotation (default: false)
     SHOW_STATUS         - Set to "true" to only show status (default: false)
+    SORT_ORDER          - Order to cycle through torrents: alphabetical, reverse, random, date_added (default: alphabetical)
     LOG_LEVEL           - Logging level: DEBUG, INFO, WARNING, ERROR (default: INFO)
 
     Preload Settings (optional):
@@ -48,6 +49,7 @@ import hashlib
 import json
 import logging
 import os
+import random
 import re
 import shutil
 import smtplib
@@ -177,6 +179,7 @@ CONFIG = {
     "rtorrent_url": build_rtorrent_url(),
     "batch_size": get_env_int("BATCH_SIZE", 20),
     "rotation_days": get_env_int("ROTATION_DAYS", 14),
+    "sort_order": get_env("SORT_ORDER", "alphabetical").lower(),
     "download_dir": get_env("DOWNLOAD_DIR", "/downloads/route23"),
     "add_delay": get_env_float("ADD_DELAY", 30.0),
     "remove_delay": get_env_float("REMOVE_DELAY", 5.0),
@@ -709,12 +712,28 @@ class TorrentRotator:
         state_path = Path(self.config["state_file"])
         if state_path.exists():
             with open(state_path, "r") as f:
-                return json.load(f)
+                state = json.load(f)
+            # One-time migration: backfill seeded_this_cycle from torrent_history
+            # so existing installs don't re-seed already-processed files.
+            if "seeded_this_cycle" not in state:
+                state["seeded_this_cycle"] = [
+                    info["path"]
+                    for info in state.get("torrent_history", {}).values()
+                    if "path" in info
+                ]
+                if state["seeded_this_cycle"]:
+                    logger.info(
+                        f"Migrated {len(state['seeded_this_cycle'])} previously seeded "
+                        f"torrents into cycle tracking"
+                    )
+            return state
         return {
             "current_index": 0,
             "batch_started": None,
             "current_batch": [],
             "completed_batches": 0,
+            "sort_seed": None,
+            "seeded_this_cycle": [],
             "torrent_history": {},
         }
 
@@ -727,14 +746,33 @@ class TorrentRotator:
         logger.info(f"State saved to {state_path}")
 
     def get_torrent_files(self) -> list:
-        """Get sorted list of all .torrent files."""
+        """Get list of all .torrent files ordered by SORT_ORDER."""
         torrent_dir = Path(self.config["torrent_dir"])
         if not torrent_dir.exists():
             logger.error(f"Torrent directory not found: {torrent_dir}")
             return []
 
-        torrents = sorted(torrent_dir.glob("*.torrent"))
-        logger.info(f"Found {len(torrents)} torrent files")
+        sort_order = self.config["sort_order"]
+        torrents = list(torrent_dir.glob("*.torrent"))
+
+        if sort_order == "alphabetical":
+            torrents = sorted(torrents)
+        elif sort_order == "reverse":
+            torrents = sorted(torrents, reverse=True)
+        elif sort_order == "date_added":
+            torrents = sorted(torrents, key=lambda t: t.stat().st_mtime)
+        elif sort_order == "random":
+            if self.state.get("sort_seed") is None:
+                self.state["sort_seed"] = random.randint(0, 2**32)
+            rng = random.Random(self.state["sort_seed"])
+            rng.shuffle(torrents)
+        else:
+            logger.warning(
+                f"Unknown SORT_ORDER '{sort_order}', falling back to alphabetical"
+            )
+            torrents = sorted(torrents)
+
+        logger.info(f"Found {len(torrents)} torrent files (sort: {sort_order})")
         return [str(t) for t in torrents]
 
     def get_torrent_hash(self, torrent_path: str) -> str:
@@ -847,28 +885,28 @@ class TorrentRotator:
         return False
 
     def get_next_batch(self) -> list:
-        """Get the next batch of torrent files to seed."""
+        """Get the next batch of torrent files to seed, skipping already-seeded ones."""
         all_torrents = self.get_torrent_files()
         if not all_torrents:
             return []
 
-        batch_size = self.config["batch_size"]
-        start_idx = self.state["current_index"]
+        seeded = set(self.state.get("seeded_this_cycle", []))
+        eligible = [t for t in all_torrents if t not in seeded]
 
-        if start_idx >= len(all_torrents):
-            start_idx = 0
-            self.state["current_index"] = 0
-            logger.info("Wrapped around to beginning of torrent list")
+        if not eligible:
+            logger.info(
+                f"All {len(all_torrents)} torrents seeded this cycle — starting new cycle"
+            )
+            self.state["seeded_this_cycle"] = []
+            if self.config["sort_order"] == "random":
+                self.state["sort_seed"] = random.randint(0, 2**32)
+                all_torrents = self.get_torrent_files()
+            eligible = all_torrents
 
-        end_idx = min(start_idx + batch_size, len(all_torrents))
-        batch = all_torrents[start_idx:end_idx]
-
-        if len(batch) < batch_size and start_idx > 0:
-            remaining = batch_size - len(batch)
-            batch.extend(all_torrents[:remaining])
-
+        batch = eligible[: self.config["batch_size"]]
         logger.info(
-            f"Next batch: indices {start_idx} to {end_idx} ({len(batch)} torrents)"
+            f"Next batch: {len(batch)} torrents "
+            f"({len(eligible)} eligible, {len(seeded)} seeded this cycle)"
         )
         return batch
 
@@ -946,7 +984,9 @@ class TorrentRotator:
 
         self.state["current_batch"] = added
         self.state["batch_started"] = datetime.now().isoformat()
-        self.state["current_index"] += len(new_batch)
+        self.state.setdefault("seeded_this_cycle", [])
+        self.state["seeded_this_cycle"].extend(added)
+        self.state["current_index"] = len(self.state["seeded_this_cycle"])
         self.state["completed_batches"] += 1
 
         self.save_state()
@@ -969,7 +1009,8 @@ class TorrentRotator:
         print(f"Batch size:               {self.config['batch_size']}")
         print(f"Rotation period:          {self.config['rotation_days']} days")
         print(f"Completed batches:        {self.state['completed_batches']}")
-        print(f"Current index:            {self.state['current_index']}")
+        seeded_count = len(self.state.get("seeded_this_cycle", []))
+        print(f"Seeded this cycle:        {seeded_count} / {len(all_torrents)}")
 
         print("-" * 50)
         print("PERFORMANCE SETTINGS")
