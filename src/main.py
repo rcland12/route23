@@ -27,6 +27,7 @@ Environment Variables:
     FORCE_ROTATION      - Set to "true" to force rotation (default: false)
     DELETE_DATA         - Set to "true" to delete downloaded files on rotation (default: false)
     SHOW_STATUS         - Set to "true" to only show status (default: false)
+    REPRELOAD           - Set to "true" to re-run preload against the current batch (default: false)
     LOG_LEVEL           - Logging level: DEBUG, INFO, WARNING, ERROR (default: INFO)
 
     Preload Settings (optional):
@@ -199,6 +200,7 @@ FORCE_ROTATION = get_env_bool("FORCE_ROTATION", False)
 DELETE_DATA = get_env_bool("DELETE_DATA", False)
 SHOW_STATUS = get_env_bool("SHOW_STATUS", False)
 PRELOAD_ENABLED = get_env_bool("PRELOAD_ENABLED", False)
+REPRELOAD = get_env_bool("REPRELOAD", False)
 
 
 log_level = get_env("LOG_LEVEL", "INFO").upper()
@@ -327,7 +329,9 @@ class PreloadManager:
         If two files share the same size (ambiguous), that size key is set to None
         so the caller can detect and skip the collision.
         """
-        ext_pattern = "|".join(re.escape(e) for e in self.VIDEO_EXTENSIONS)
+        ext_pattern = "|".join(
+            re.escape(e.lstrip(".")) for e in self.VIDEO_EXTENSIONS
+        )
         cmd = (
             f'find "{remote_path}" -type f -printf "%s\\t%p\\n"'
             f' | grep -Ei "\\.({ext_pattern})$"'
@@ -378,7 +382,9 @@ class PreloadManager:
 
         size_map = self._list_remote_video_files_with_sizes(remote_path)
         if not size_map:
-            return None, f"no video files found in remote '{remote_dirname}'"
+            reason = f"no video files found in remote '{remote_dirname}'"
+            logger.warning(f"Preload: {reason} — skipping '{torrent_name}'")
+            return None, reason
 
         pairs = []
         for tf in torrent_videos:
@@ -955,6 +961,56 @@ class TorrentRotator:
 
         self.notifier.flush()
 
+    def repreload(self):
+        """Re-run preload against the currently active batch.
+
+        Useful when the original rotation could not reach the remote machine
+        (e.g. it was offline) and the torrents are still seeding empty. For
+        each torrent in the saved current batch, this re-attempts the SCP
+        copy and triggers an rtorrent hash recheck on success.
+        """
+        if not self.preloader:
+            logger.error("Repreload requested but PRELOAD_ENABLED is not set")
+            return
+
+        batch = self.state.get("current_batch", [])
+        if not batch:
+            logger.warning("Repreload: no current batch in state, nothing to do")
+            return
+
+        logger.info(f"Repreload: re-attempting {len(batch)} torrent(s)")
+
+        for i, torrent_path in enumerate(batch, 1):
+            if not Path(torrent_path).exists():
+                logger.warning(
+                    f"[{i}/{len(batch)}] torrent file missing: {torrent_path}"
+                )
+                continue
+
+            self.wait_for_low_load()
+            logger.info(f"[{i}/{len(batch)}] Repreload: {Path(torrent_path).name}")
+
+            result = self.preloader.preload(
+                torrent_path, self.config["download_dir"]
+            )
+            self.notifier.add(result)
+
+            if result.success:
+                try:
+                    rt_hash = self.find_rtorrent_hash(result.torrent_name)
+                    if rt_hash:
+                        self.trigger_hash_check(rt_hash)
+                    else:
+                        logger.warning(
+                            f"Repreload: could not find rtorrent hash for "
+                            f"'{result.torrent_name}' to trigger recheck"
+                        )
+                except Exception as e:
+                    logger.warning(f"Repreload: hash check step failed — {e}")
+
+        logger.info("Repreload complete")
+        self.notifier.flush()
+
     def status(self):
         """Print current status."""
         all_torrents = self.get_torrent_files()
@@ -1061,6 +1117,8 @@ def main():
 
     if SHOW_STATUS:
         rotator.status()
+    elif REPRELOAD:
+        rotator.repreload()
     else:
         rotator.run(force=FORCE_ROTATION, delete_data=DELETE_DATA)
 
