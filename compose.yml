@@ -106,20 +106,20 @@ services:
 
   vpn:
     container_name: route23-vpn
-    image: qmcgaw/gluetun:latest
+    image: qmcgaw/gluetun:v3.41
     restart: unless-stopped
     networks:
       - route23
     ports:
-      - "63213:63213"
-      - "63213:63213/udp"
+      - "${OPENVPN_PORT}:${OPENVPN_PORT}"
+      - "${OPENVPN_PORT}:${OPENVPN_PORT}/udp"
     environment:
       OPENVPN_USER: ${OPENVPN_USER}
       OPENVPN_PASSWORD: ${OPENVPN_PASSWORD}
       VPN_SERVICE_PROVIDER: "custom"
       VPN_TYPE: "openvpn"
       OPENVPN_CUSTOM_CONFIG: "/gluetun/airvpn.ovpn"
-      FIREWALL_VPN_INPUT_PORTS: "63213"
+      FIREWALL_VPN_INPUT_PORTS: ${OPENVPN_PORT}
       FIREWALL_OUTBOUND_SUBNETS: "192.168.1.0/24"
       DNS_UPSTREAM_TYPE: "plain"
       DNS_UPSTREAM_PLAIN_ADDRESSES: "1.1.1.1:53"
