@@ -1027,6 +1027,29 @@ class TorrentRotator:
                 )
                 continue
 
+            # Skip torrents that rtorrent already reports as fully downloaded.
+            try:
+                torrent_name = parse_torrent(torrent_path)["name"]
+                rt_hash = self.find_rtorrent_hash(torrent_name, retries=1)
+                if rt_hash:
+                    done = int(self.rtorrent.d.bytes_done(rt_hash))
+                    total = int(self.rtorrent.d.size_bytes(rt_hash))
+                    if total > 0 and done >= total:
+                        logger.info(
+                            f"[{i}/{len(batch)}] Skipping '{torrent_name}' "
+                            f"— already 100% ({_format_size(total)})"
+                        )
+                        continue
+                    if total > 0:
+                        pct = done * 100 / total
+                        logger.info(
+                            f"[{i}/{len(batch)}] '{torrent_name}' is "
+                            f"{pct:.1f}% complete "
+                            f"({_format_size(done)} / {_format_size(total)})"
+                        )
+            except Exception as e:
+                logger.warning(f"Repreload: completion check failed — {e}")
+
             self.wait_for_low_load()
             logger.info(f"[{i}/{len(batch)}] Repreload: {Path(torrent_path).name}")
 
