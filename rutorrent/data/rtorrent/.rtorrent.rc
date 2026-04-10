@@ -76,7 +76,7 @@ network.max_open_files.set = 3072
 network.tos.set = throughput
 network.max_open_sockets.set = 2048
 network.http.max_open.set = 256
-network.port_range.set = 41622-41622
+network.port_range.set = 63213-63213
 network.port_random.set = no
 
 # Network buffer sizes (increased for better throughput)

@@ -111,6 +111,7 @@ services:
     networks:
       - route23
     ports:
+      - "127.0.0.1:8000:8000"
       - "${OPENVPN_PORT}:${OPENVPN_PORT}"
       - "${OPENVPN_PORT}:${OPENVPN_PORT}/udp"
     environment:
@@ -121,15 +122,17 @@ services:
       OPENVPN_CUSTOM_CONFIG: "/gluetun/airvpn.ovpn"
       FIREWALL_VPN_INPUT_PORTS: ${OPENVPN_PORT}
       FIREWALL_OUTBOUND_SUBNETS: "192.168.1.0/24"
-      DNS_UPSTREAM_TYPE: "plain"
-      DNS_UPSTREAM_PLAIN_ADDRESSES: "1.1.1.1:53"
+      DNS_UPSTREAM_RESOLVER_TYPE: "dot"
+      DNS_UPSTREAM_RESOLVERS: "cloudflare,quad9"
       DNS_UPSTREAM_IPV6: "off"
       DNS_CACHING: "on"
       BLOCK_MALICIOUS: "off"
       BLOCK_SURVEILLANCE: "off"
       BLOCK_ADS: "off"
+      HEALTH_TARGET_ADDRESSES: "cloudflare.com:443,github.com:443"
+      HEALTH_ICMP_TARGET_IPS: "1.1.1.1,8.8.8.8"
       HEALTH_SUCCESS_WAIT_DURATION: "10s"
-      HEALTH_TARGET_ADDRESSES: "1.1.1.1:443"
+      HEALTH_RESTART_VPN: "on"
       TZ: ${TIMEZONE}
     volumes:
       - ./gluetun/airvpn:/gluetun
@@ -139,10 +142,10 @@ services:
       - /dev/net/tun:/dev/net/tun
     healthcheck:
       test: ["CMD", "/gluetun-entrypoint", "healthcheck"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
+      interval: 15s
+      timeout: 5s
+      retries: 2
+      start_period: 15s
 
   postfix:
     container_name: route23-postfix
