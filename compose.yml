@@ -9,7 +9,7 @@ services:
     container_name: route23
     image: rcland12/route23:latest
     build: .
-    restart: "no"
+    restart: no
     depends_on:
       rutorrent:
         condition: service_healthy
@@ -30,12 +30,12 @@ services:
       MAX_LOAD: 5.0
       LOAD_WAIT: 30
       STARTUP_DELAY: 10
-      FORCE_ROTATION: "false"
-      DELETE_DATA: "true"
-      SHOW_STATUS: "false"
+      FORCE_ROTATION: false
+      DELETE_DATA: true
+      SHOW_STATUS: false
       SORT_ORDER: random
       LOG_LEVEL: INFO
-      PRELOAD_ENABLED: "true"
+      PRELOAD_ENABLED: true
       PRELOAD_HOST: ${PRELOAD_HOST}
       PRELOAD_USER: ${PRELOAD_USER}
       PRELOAD_SSH_KEY: ${PRELOAD_SSH_KEY}
@@ -56,9 +56,6 @@ services:
     container_name: route23-nginx
     image: nginx:alpine
     restart: unless-stopped
-    depends_on:
-      rutorrent:
-        condition: service_healthy
     networks:
       - route23
     ports:
@@ -112,40 +109,47 @@ services:
       - route23
     ports:
       - "127.0.0.1:8000:8000"
-      - "${OPENVPN_PORT}:${OPENVPN_PORT}"
-      - "${OPENVPN_PORT}:${OPENVPN_PORT}/udp"
+      - "${AIRVPN_PORT}:${AIRVPN_PORT}"
+      - "${AIRVPN_PORT}:${AIRVPN_PORT}/udp"
     environment:
-      OPENVPN_USER: ${OPENVPN_USER}
-      OPENVPN_PASSWORD: ${OPENVPN_PASSWORD}
-      VPN_SERVICE_PROVIDER: "custom"
-      VPN_TYPE: "openvpn"
-      OPENVPN_CUSTOM_CONFIG: "/gluetun/airvpn.ovpn"
-      FIREWALL_VPN_INPUT_PORTS: ${OPENVPN_PORT}
-      FIREWALL_OUTBOUND_SUBNETS: "192.168.1.0/24"
-      DNS_UPSTREAM_RESOLVER_TYPE: "dot"
+      VPN_SERVICE_PROVIDER: airvpn
+      VPN_TYPE: wireguard
+      WIREGUARD_PRIVATE_KEY: ${WIREGUARD_PRIVATE_KEY}
+      WIREGUARD_PRESHARED_KEY: ${WIREGUARD_PRESHARED_KEY}
+      WIREGUARD_ADDRESSES: ${WIREGUARD_ADDRESSES}
+      SERVER_COUNTRIES: ${AIRVPN_SERVER_COUNTRIES}
+      SERVER_CITIES: ${AIRVPN_SERVER_CITIES}
+      FIREWALL_VPN_INPUT_PORTS: ${AIRVPN_PORT}
+      FIREWALL_OUTBOUND_SUBNETS: 192.168.1.0/24
+      DNS_UPSTREAM_RESOLVER_TYPE: dot
       DNS_UPSTREAM_RESOLVERS: "cloudflare,quad9"
-      DNS_UPSTREAM_IPV6: "off"
-      DNS_CACHING: "on"
-      BLOCK_MALICIOUS: "off"
-      BLOCK_SURVEILLANCE: "off"
-      BLOCK_ADS: "off"
-      HEALTH_TARGET_ADDRESSES: "cloudflare.com:443,github.com:443"
-      HEALTH_ICMP_TARGET_IPS: "1.1.1.1,8.8.8.8"
-      HEALTH_SUCCESS_WAIT_DURATION: "10s"
-      HEALTH_RESTART_VPN: "on"
+      DNS_UPSTREAM_IPV6: off
+      DNS_CACHING: on
+      BLOCK_MALICIOUS: off
+      BLOCK_SURVEILLANCE: off
+      BLOCK_ADS: off
+      HEALTH_TARGET_ADDRESSES: "cloudflare.com:443,github.com:443,1.1.1.1:443"
+      HEALTH_ICMP_TARGET_IPS: "1.1.1.1,8.8.8.8,9.9.9.9"
+      HEALTH_SUCCESS_WAIT_DURATION: 30s
+      HEALTH_VPN_DURATION_INITIAL: 30s
+      HEALTH_VPN_DURATION_ADDITION: 10s
+      HEALTH_RESTART_VPN: on
+      PUBLICIP_ENABLED: yes
+      PUBLICIP_PERIOD: 12h
       TZ: ${TIMEZONE}
-    volumes:
-      - ./gluetun/airvpn:/gluetun
     cap_add:
       - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
     devices:
       - /dev/net/tun:/dev/net/tun
     healthcheck:
       test: ["CMD", "/gluetun-entrypoint", "healthcheck"]
-      interval: 15s
-      timeout: 5s
-      retries: 2
-      start_period: 15s
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   postfix:
     container_name: route23-postfix
@@ -154,19 +158,19 @@ services:
     networks:
       - route23
     ports:
-      - "127.0.0.1:2525:25"
+      - 127.0.0.1:2525:25
     environment:
       RELAYHOST: "[smtp.gmail.com]:587"
       RELAYHOST_USERNAME: ${POSTFIX_EMAIL}
       RELAYHOST_PASSWORD: ${POSTFIX_PASSWORD}
       HOSTNAME: ${POSTFIX_HOSTNAME}
       ALLOWED_SENDER_DOMAINS: ${POSTFIX_ALLOWED_SENDER_DOMAINS}
-      MYNETWORKS: "127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16"
+      MYNETWORKS: 127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
       POSTFIX_message_size_limit: 52428800
-      SMTP_HEADER_CHECKS: "regexp:/etc/postfix/smtp_header_checks"
+      SMTP_HEADER_CHECKS: regexp:/etc/postfix/smtp_header_checks
       SMTP_TLS_SECURITY_LEVEL: may
-      SMTP_USE_TLS: "yes"
-      SMTPD_USE_TLS: "yes"
+      SMTP_USE_TLS: yes
+      SMTPD_USE_TLS: yes
       INBOUND_DEBUGGING: 0
       DISABLE_SMTP_UTF8: 0
     security_opt:
