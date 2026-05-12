@@ -18,7 +18,7 @@ services:
     environment:
       TZ: ${TIMEZONE}
       TORRENT_DIR: /torrents
-      RTORRENT_URL: http://vpn:8080/plugins/httprpc/action.php
+      RTORRENT_URL: http://vpn:18000
       RTORRENT_USER: ${RTORRENT_USER}
       RTORRENT_PASS: ${RTORRENT_PASS}
       STATE_FILE: /states/route23_state.json
