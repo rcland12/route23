@@ -825,9 +825,24 @@ class TorrentRotator:
                         f"Could not get base path for {info_hash[:8]}: {e}"
                     )
 
-            self.rtorrent.d.stop(info_hash)
-            self.rtorrent.d.close(info_hash)
-            self.rtorrent.d.erase(info_hash)
+            last_fault = None
+            for attempt in range(3):
+                try:
+                    self.rtorrent.d.stop(info_hash)
+                    self.rtorrent.d.close(info_hash)
+                    self.rtorrent.d.erase(info_hash)
+                    break
+                except xmlrpc.client.Fault as fault:
+                    if fault.faultCode != -507:
+                        raise
+                    last_fault = fault
+                    logger.warning(
+                        f"Transient trust fault removing {info_hash[:8]} "
+                        f"(attempt {attempt + 1}/3): {fault.faultString}"
+                    )
+                    time.sleep(2)
+            else:
+                raise last_fault
             logger.info(f"Removed torrent: {info_hash}")
 
             if delete_data and base_path:
