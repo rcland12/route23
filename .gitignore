@@ -21,3 +21,5 @@ rutorrent/downloads/temp/*
 !rutorrent/downloads/complete/.gitkeep
 !rutorrent/downloads/route23/.gitkeep
 !rutorrent/downloads/temp/.gitkeep
+
+__pycache__/

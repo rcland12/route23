@@ -28,6 +28,11 @@ Environment Variables:
     DELETE_DATA         - Set to "true" to delete downloaded files on rotation (default: false)
     SHOW_STATUS         - Set to "true" to only show status (default: false)
     REPRELOAD           - Set to "true" to re-run preload against the current batch (default: false)
+    FORCE_PRELOAD_TORRENT       - Substring (case-insensitive) identifying a single torrent to preload.
+                                  Searches current_batch first, then all .torrent files. Use when a
+                                  single torrent failed and needs to be re-staged without touching others.
+    FORCE_PRELOAD_REMOTE_DIR    - Optional exact remote directory name to use instead of auto-matching.
+                                  Useful when the Plex dir name doesn't match what the auto-matcher expects.
     SORT_ORDER          - Order to cycle through torrents: alphabetical, reverse, random, date_added (default: alphabetical)
     LOG_LEVEL           - Logging level: DEBUG, INFO, WARNING, ERROR (default: INFO)
 
@@ -204,6 +209,8 @@ DELETE_DATA = get_env_bool("DELETE_DATA", False)
 SHOW_STATUS = get_env_bool("SHOW_STATUS", False)
 PRELOAD_ENABLED = get_env_bool("PRELOAD_ENABLED", False)
 REPRELOAD = get_env_bool("REPRELOAD", False)
+FORCE_PRELOAD_TORRENT = get_env("FORCE_PRELOAD_TORRENT", "")
+FORCE_PRELOAD_REMOTE_DIR = get_env("FORCE_PRELOAD_REMOTE_DIR", "")
 
 
 log_level = get_env("LOG_LEVEL", "INFO").upper()
@@ -313,6 +320,7 @@ class PreloadManager:
             logger.warning("Preload: could not list remote directory")
             return None
 
+        same_year_candidates: list[str] = []
         for dirname in output.splitlines():
             rtitle, ryear = self._parse_plex_dirname(dirname)
             if year and ryear and year != ryear:
@@ -320,8 +328,17 @@ class PreloadManager:
             if title == rtitle:
                 logger.info(f"Preload: matched '{dirname}'")
                 return dirname
+            if year and ryear == year:
+                same_year_candidates.append(dirname)
 
-        logger.debug(f"Preload: no match found for '{torrent_name}'")
+        detail = f"normalized title='{title}', year={year}"
+        if same_year_candidates:
+            sample = ", ".join(f"'{c}'" for c in same_year_candidates[:5])
+            extra = (
+                f"; {len(same_year_candidates)} same-year candidate(s): {sample}"
+            )
+            detail += extra
+        logger.warning(f"Preload: no match for '{torrent_name}' ({detail})")
         return None
 
     def _list_remote_video_files_with_sizes(
@@ -683,6 +700,72 @@ class TorrentRotator:
         except Exception as e:
             logger.error(f"Preload: hash check failed — {e}")
 
+    def wait_for_hash_check(self, info_hash: str, timeout: int = 600) -> bool:
+        """Block until rtorrent finishes hashing this torrent. Returns True if it finished."""
+        time.sleep(2)
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                if int(self.rtorrent.d.hashing(info_hash)) == 0:
+                    return True
+            except Exception as e:
+                logger.warning(
+                    f"Hash check poll failed for {info_hash[:8]} — {e}"
+                )
+                return False
+            time.sleep(3)
+        logger.warning(
+            f"Hash check did not finish within {timeout}s for {info_hash[:8]}"
+        )
+        return False
+
+    def verify_preload_data(self, info_hash: str, torrent_name: str) -> int:
+        """Wait for hash-check completion. If 0%, stop the torrent so it's visibly broken.
+
+        Returns bytes_done. Catches the 'preload staged wrong bytes' case where SCP
+        succeeded but the data doesn't match the torrent's pieces (e.g. same size,
+        different encode), which would otherwise leave the torrent silently started
+        with no usable data.
+        """
+        self.wait_for_hash_check(info_hash)
+        try:
+            done = int(self.rtorrent.d.bytes_done(info_hash))
+            total = int(self.rtorrent.d.size_bytes(info_hash))
+        except Exception as e:
+            logger.warning(
+                f"Preload verify: could not read bytes for {info_hash[:8]} — {e}"
+            )
+            return 0
+
+        if total <= 0:
+            logger.warning(
+                f"Preload verify: '{torrent_name}' has unknown total size"
+            )
+            return 0
+
+        pct = done * 100 / total
+        if done == 0:
+            logger.error(
+                f"Preload verify: '{torrent_name}' is 0% after hash check — "
+                f"staged data did not match torrent pieces. Stopping torrent."
+            )
+            try:
+                self.rtorrent.d.stop(info_hash)
+            except Exception as e:
+                logger.warning(
+                    f"Preload verify: failed to stop torrent — {e}"
+                )
+        elif pct < 100:
+            logger.warning(
+                f"Preload verify: '{torrent_name}' is {pct:.1f}% after hash check "
+                f"({_format_size(done)} / {_format_size(total)}) — remainder will leech"
+            )
+        else:
+            logger.info(
+                f"Preload verify: '{torrent_name}' is 100% — seeding"
+            )
+        return done
+
     def get_system_load(self) -> float:
         """Get current system load average (1 minute)."""
         try:
@@ -800,11 +883,27 @@ class TorrentRotator:
             with open(torrent_path, "rb") as f:
                 torrent_data = f.read()
 
-            self.rtorrent.load.raw_start(
-                "",
-                xmlrpc.client.Binary(torrent_data),
-                f"d.directory.set={self.config['download_dir']}",
-            )
+            last_fault = None
+            for attempt in range(3):
+                try:
+                    self.rtorrent.load.raw_start(
+                        "",
+                        xmlrpc.client.Binary(torrent_data),
+                        f"d.directory.set={self.config['download_dir']}",
+                    )
+                    break
+                except xmlrpc.client.Fault as fault:
+                    if fault.faultCode != -507:
+                        raise
+                    last_fault = fault
+                    logger.warning(
+                        f"Transient trust fault adding {Path(torrent_path).name} "
+                        f"(attempt {attempt + 1}/3): {fault.faultString}"
+                    )
+                    time.sleep(2)
+            else:
+                raise last_fault
+
             logger.info(f"Added torrent: {Path(torrent_path).name}")
             return True
         except Exception as e:
@@ -988,6 +1087,9 @@ class TorrentRotator:
                             )
                             if rt_hash:
                                 self.trigger_hash_check(rt_hash)
+                                self.verify_preload_data(
+                                    rt_hash, preload_result.torrent_name
+                                )
                             else:
                                 logger.warning(
                                     f"Preload: could not find rtorrent hash for "
@@ -1078,6 +1180,7 @@ class TorrentRotator:
                     rt_hash = self.find_rtorrent_hash(result.torrent_name)
                     if rt_hash:
                         self.trigger_hash_check(rt_hash)
+                        self.verify_preload_data(rt_hash, result.torrent_name)
                     else:
                         logger.warning(
                             f"Repreload: could not find rtorrent hash for "
@@ -1087,6 +1190,137 @@ class TorrentRotator:
                     logger.warning(f"Repreload: hash check step failed — {e}")
 
         logger.info("Repreload complete")
+        self.notifier.flush()
+
+    def force_preload_one(
+        self, torrent_substring: str, remote_dir_override: str = ""
+    ):
+        """Re-stage data for a single torrent and recheck it.
+
+        Looks for the torrent file by case-insensitive substring against the
+        current batch first, then the full torrent directory. If
+        remote_dir_override is set, that exact remote directory is used,
+        bypassing the auto-matcher (useful when the Plex dir name differs from
+        what the matcher expects).
+        """
+        if not self.preloader:
+            logger.error(
+                "Force preload requested but PRELOAD_ENABLED is not set"
+            )
+            return
+
+        needle = torrent_substring.strip().lower()
+        if not needle:
+            logger.error("Force preload: FORCE_PRELOAD_TORRENT is empty")
+            return
+
+        batch = self.state.get("current_batch", [])
+        candidates = [t for t in batch if needle in Path(t).name.lower()]
+        source = "current_batch"
+
+        if not candidates:
+            all_torrents = self.get_torrent_files()
+            candidates = [
+                t for t in all_torrents if needle in Path(t).name.lower()
+            ]
+            source = "torrent_dir"
+
+        if not candidates:
+            logger.error(
+                f"Force preload: no .torrent file matched '{torrent_substring}'"
+            )
+            return
+
+        if len(candidates) > 1:
+            names = [Path(t).name for t in candidates[:5]]
+            logger.error(
+                f"Force preload: {len(candidates)} torrents matched "
+                f"'{torrent_substring}' — narrow the substring. First few: {names}"
+            )
+            return
+
+        torrent_path = candidates[0]
+        if not Path(torrent_path).exists():
+            logger.error(
+                f"Force preload: torrent file missing on disk: {torrent_path}"
+            )
+            return
+
+        logger.info(
+            f"Force preload: targeting {Path(torrent_path).name} (from {source})"
+        )
+
+        try:
+            torrent_info = parse_torrent(torrent_path)
+            torrent_name = torrent_info["name"]
+        except Exception as e:
+            logger.error(f"Force preload: could not parse torrent — {e}")
+            return
+
+        if remote_dir_override:
+            logger.info(
+                f"Force preload: using remote dir override '{remote_dir_override}'"
+            )
+            staged_files, reason = self.preloader.fetch_and_stage(
+                remote_dir_override,
+                torrent_info,
+                self.config["download_dir"],
+            )
+            if staged_files is None:
+                logger.error(f"Force preload: staging failed — {reason}")
+                result = PreloadResult(
+                    torrent_name=torrent_name,
+                    success=False,
+                    remote_dir=remote_dir_override,
+                    reason=reason,
+                )
+                self.notifier.add(result)
+                self.notifier.flush()
+                return
+            result = PreloadResult(
+                torrent_name=torrent_name,
+                success=True,
+                remote_dir=remote_dir_override,
+                staged_files=staged_files,
+            )
+        else:
+            result = self.preloader.preload(
+                torrent_path, self.config["download_dir"]
+            )
+            if not result.success:
+                logger.error(
+                    f"Force preload: auto-match failed — {result.reason}. "
+                    f"Set FORCE_PRELOAD_REMOTE_DIR to bypass the matcher."
+                )
+                self.notifier.add(result)
+                self.notifier.flush()
+                return
+
+        self.notifier.add(result)
+
+        rt_hash = self.find_rtorrent_hash(torrent_name)
+        if not rt_hash:
+            logger.error(
+                f"Force preload: could not find rtorrent hash for "
+                f"'{torrent_name}'. Is the torrent loaded in rtorrent?"
+            )
+            self.notifier.flush()
+            return
+
+        self.trigger_hash_check(rt_hash)
+        done = self.verify_preload_data(rt_hash, torrent_name)
+
+        if done > 0:
+            try:
+                self.rtorrent.d.start(rt_hash)
+                logger.info(
+                    f"Force preload: ensured '{torrent_name}' is started"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Force preload: could not start torrent — {e}"
+                )
+
         self.notifier.flush()
 
     def status(self):
@@ -1196,6 +1430,10 @@ def main():
 
     if SHOW_STATUS:
         rotator.status()
+    elif FORCE_PRELOAD_TORRENT:
+        rotator.force_preload_one(
+            FORCE_PRELOAD_TORRENT, FORCE_PRELOAD_REMOTE_DIR
+        )
     elif REPRELOAD:
         rotator.repreload()
     else:
