@@ -8,11 +8,13 @@ services:
   app:
     container_name: route23
     image: rcland12/route23:latest
-    build: .
+    build: ./
     restart: no
     depends_on:
       rutorrent:
         condition: service_healthy
+    profiles:
+      - app
     networks:
       - route23
     environment:
@@ -59,9 +61,11 @@ services:
     networks:
       - route23
     ports:
-      - 8080:80
+      - 80:80
+      - 443:443
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - /etc/nginx/certs:/etc/nginx/certs:ro
     healthcheck:
       test: ["CMD-SHELL", "nginx -t || exit 1"]
       interval: 30s
@@ -107,10 +111,6 @@ services:
     restart: unless-stopped
     networks:
       - route23
-    ports:
-      - "127.0.0.1:8000:8000"
-      - "${AIRVPN_PORT}:${AIRVPN_PORT}"
-      - "${AIRVPN_PORT}:${AIRVPN_PORT}/udp"
     environment:
       VPN_SERVICE_PROVIDER: airvpn
       VPN_TYPE: wireguard

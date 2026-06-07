@@ -29,6 +29,7 @@ mkdir -p ./logs
 LOG_FILE="./logs/route23_force_preload.log"
 
 docker compose run --rm \
+    --profile route23 \
     -e FORCE_PRELOAD_TORRENT="${TORRENT_SUBSTR}" \
     -e FORCE_PRELOAD_REMOTE_DIR="${REMOTE_DIR_OVERRIDE}" \
     app > "${LOG_FILE}" 2>&1 &
