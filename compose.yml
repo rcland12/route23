@@ -14,7 +14,7 @@ services:
       rutorrent:
         condition: service_healthy
     profiles:
-      - app
+      - route23
     networks:
       - route23
     environment:

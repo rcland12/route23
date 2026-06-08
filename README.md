@@ -145,13 +145,22 @@ sudo apt update && sudo apt install apache2-utils
 # Create web UI credentials (choose your own username/password)
 htpasswd -Bbn your_username your_password > ./rutorrent/passwd/rutorrent.htpasswd
 
-# Start the services
-docker compose up -d nginx
+# Create a TLS certificate for the web UI (self-signed example)
+sudo mkdir -p /etc/nginx/certs
+sudo openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+  -keyout /etc/nginx/certs/key.pem \
+  -out /etc/nginx/certs/cert.pem \
+  -subj "/CN=$(hostname)"
 
-# Access web UI at http://<your-server-ip>:8080
+# Start the supporting services (everything except the rotator)
+docker compose up -d
+
+# Access web UI at https://<your-server-ip>
 ```
 
 That's it! Your route23 instance is running. Add `.torrent` files to `./rutorrent/torrents/` and run your first rotation with `docker compose run --rm app`.
+
+> **Note:** The `app` (rotator) service is assigned to the `route23` Compose profile, so `docker compose up` brings up only the supporting services (nginx, ruTorrent, VPN, postfix). The rotator is meant to run on demand — `docker compose run --rm app` starts it (and automatically enables its profile), and that's what the cron job and `exe/` scripts use.
 
 For detailed configuration options and advanced features, continue reading below.
 
@@ -163,7 +172,7 @@ For detailed configuration options and advanced features, continue reading below
 │                                                              │
 │  ┌──────────┐    ┌──────────────┐    ┌──────────────────┐    │
 │  │  nginx   │───▶│   ruTorrent  │───▶│   VPN (Gluetun)  │──▶ │ Internet
-│  │  :8080   │    │   Web UI     │    │   NordVPN/WG     │    │
+│  │ :80/:443 │    │   Web UI     │    │   NordVPN/WG     │    │
 │  └──────────┘    └──────────────┘    └──────────────────┘    │
 │        │                                      │              │
 │        │         ┌──────────────┐             │              │
@@ -383,15 +392,33 @@ htpasswd -Bbn your_username your_password > ./rutorrent/passwd/rutorrent.htpassw
 
 **Important:** The username and password here MUST match `RTORRENT_USER` and `RTORRENT_PASS` from your `.env` file.
 
-### 5. Start Services
+### 5. Create TLS Certificate
+
+nginx serves the web UI over HTTPS, redirecting all plain HTTP traffic on port 80 to port 443. It expects a certificate and key at `/etc/nginx/certs/cert.pem` and `/etc/nginx/certs/key.pem` on the host (mounted read-only into the container).
+
+For a quick self-signed certificate:
 
 ```bash
-docker compose up -d nginx
+sudo mkdir -p /etc/nginx/certs
+sudo openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+  -keyout /etc/nginx/certs/key.pem \
+  -out /etc/nginx/certs/cert.pem \
+  -subj "/CN=$(hostname)"
 ```
 
-Wait for containers to start (30-60 seconds), then access the web UI at `http://<your-server-ip>:8080` using the credentials you created in steps 3 and 4.
+If you have a real certificate (e.g. from Let's Encrypt or an internal CA), drop the PEM files in the same location instead. The `server_name` in `nginx/nginx.conf` defaults to `rustypi3.home.arpa` — change it to match your hostname.
 
-### 6. Verify Setup
+### 6. Start Services
+
+```bash
+docker compose up -d
+```
+
+The `app` (rotator) service is in the `route23` Compose profile, so `docker compose up` starts only the supporting services — nginx, ruTorrent, VPN, and postfix. The rotator runs on demand (see [Running route23](#running-route23)).
+
+Wait for containers to start (30-60 seconds), then access the web UI at `https://<your-server-ip>` using the credentials you created in steps 3 and 4. With a self-signed certificate your browser will warn about the connection — accept it to continue.
+
+### 7. Verify Setup
 
 Check that all containers are running:
 
@@ -1065,7 +1092,7 @@ While route23 is the core automation, these additional features enhance the over
 Access the ruTorrent web interface for manual torrent management:
 
 ```
-http://<server-ip>:8080
+https://<server-ip>
 ```
 
 **Features:**
@@ -1163,7 +1190,7 @@ docker compose exec vpn env | grep WIREGUARD
 
 ```bash
 # Regenerate htpasswd file
-htpasswd -Bbn username password > ./passwd/rutorrent.htpasswd
+htpasswd -Bbn username password > ./rutorrent/passwd/rutorrent.htpasswd
 
 # Restart services
 docker compose restart rutorrent nginx
