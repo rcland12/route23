@@ -46,7 +46,7 @@ services:
       SMTP_PORT: 25
       FROM_EMAIL: torrents@russellland.dev
       NOTIFY_EMAIL: ${POSTFIX_EMAIL}
-      SERVER_NAME: ${SERVER_NAME}
+      SERVER_NAME: ${NGINX_SERVER_NAME}
     volumes:
       - ./rutorrent/torrents:/torrents:ro
       - ./rutorrent/data/states:/states
@@ -63,8 +63,12 @@ services:
     ports:
       - 80:80
       - 443:443
+    environment:
+      NGINX_SERVER_NAME: ${NGINX_SERVER_NAME}
+      NGINX_ENVSUBST_FILTER: "NGINX_"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/templates:/etc/nginx/templates:ro
       - /etc/nginx/certs:/etc/nginx/certs:ro
     healthcheck:
       test: ["CMD-SHELL", "nginx -t || exit 1"]
@@ -94,7 +98,8 @@ services:
       SMTP_PORT: 25
       FROM_EMAIL: torrents@russellland.dev
       TO_EMAIL: ${POSTFIX_EMAIL}
-      SERVER_NAME: ${SERVER_NAME}
+      SERVER_NAME: ${NGINX_SERVER_NAME}
+      RT_INC_PORT: ${AIRVPN_PORT}
     ulimits:
       nproc: 65535
       nofile:
