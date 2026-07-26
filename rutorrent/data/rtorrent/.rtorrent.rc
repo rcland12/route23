@@ -1,6 +1,7 @@
 #############################################################################
 # rTorrent Configuration - created by Russell Land
-# Container: CrazyMax rtorrent-rutorrent
+# Container: CrazyMax rtorrent-rutorrent (rTorrent 0.16.x)
+# For low-power servers (~10 torrents)
 #############################################################################
 
 directory.default.set = /downloads/route23
@@ -9,19 +10,14 @@ directory.default.set = /downloads/route23
 # Global upload limits
 throttle.max_uploads.global.set = 250
 
-### Per-torrent peer limits ###
+# Per-torrent peer limits
 throttle.min_peers.normal.set = 30
 throttle.max_peers.normal.set = 80
 throttle.min_peers.seed.set = 40
 throttle.max_peers.seed.set = 150
 
-### Upload slots per torrent ###
+# Upload slots per torrent
 throttle.max_uploads.set = 25
-
-### Network connections ###
-network.max_open_sockets.set = 1024
-network.max_open_files.set = 1024
-network.http.max_open.set = 128
 
 ### Bandwidth Management ###
 # Global bandwidth limits (controlled via environment variables or manually set)
@@ -30,21 +26,21 @@ network.http.max_open.set = 128
 # throttle.global_down.max_rate.set_kb = 0    # 0 = unlimited
 # throttle.global_up.max_rate.set_kb = 3072   # 3MB/s upload limit
 
-### Memory & Performance - SSD Optimized for More Torrents ###
-# Memory allocation
+### Memory & Performance - Tuned for low-memory hardware ###
+# Memory address space for mapping file chunks
 pieces.memory.max.set = 512M
 
-### File allocation ###
+# File allocation
 system.file.allocate.set = 0
 system.file.max_size.set = 200G
 
-### Aggressive preloading for SSD performance ###
+### Preloading for SSD performance ###
 pieces.preload.type.set = 2
 pieces.preload.min_size.set = 524288
 pieces.preload.min_rate.set = 10240
 
-### Hash Checking & SSD Optimization ###
-# Enable hash checking for data integrity
+### Hash Checking ###
+# Disabled to save CPU on weak hardware
 pieces.hash.on_completion.set = no
 
 ### SSD-optimized sync settings ###
@@ -56,26 +52,19 @@ pieces.sync.timeout_safe.set = 900
 # Encryption
 protocol.encryption.set = allow_incoming,try_outgoing,enable_retry
 
-### Enable peer exchange and UDP trackers ###
+# Peer exchange and UDP trackers
 protocol.pex.set = yes
 trackers.use_udp.set = yes
 
-### Tracker settings ###
+# Tracker settings
 trackers.numwant.set = 200
 
 ### DHT Configuration ###
-# Enable DHT for better peer discovery
 dht.mode.set = auto
 dht.port.set = 6881
 
-### Advanced Performance Tuning - Enhanced for 50 Torrents ###
-# Optimize for large files (movies)
-
-### Network optimizations ###
-network.max_open_files.set = 3072
+### Network tuning ###
 network.tos.set = throughput
-network.max_open_sockets.set = 2048
-network.http.max_open.set = 256
 
 ### Network buffer sizes ###
 network.send_buffer.size.set = 4M
@@ -85,20 +74,20 @@ network.receive_buffer.size.set = 2M
 network.xmlrpc.size_limit.set = 64M
 
 ### Watch Directory ###
-# Auto-load torrents with 5-second intervals
-schedule2 = watch_directory, 5, 5, ((load.start, (cat, (cfg.watch), "*.torrent")))
+directory.watch.added = (cat,(cfg.watch)), load.start
+schedule = untied_directory, 5, 5, (cat,"stop_untied=",(cfg.watch),"*.torrent")
 
 ### File Movement on Completion ###
 method.insert = d.get_finished_dir, simple, "cat=(cfg.download_complete)"
 
 ### Disk Space Management ###
 # Stop torrents when disk space is low
-schedule2 = low_diskspace, 60, 300, ((close_low_diskspace, 15000M))
+schedule = low_diskspace, 60, 300, ((close_low_diskspace, 15000M))
 
 ### Ratio Management ###
-# Stop seeding at 2.0 ratio or after 7 days
-# method.insert = d.get_ratio, simple, "math.div=d.up.total=,d.size_bytes="
-# schedule2 = ratio_check, 300, 600, "stop_on_ratio=200,604800"
+# The old stop_on_ratio schedule was not a valid rTorrent command and
+# never functioned. Use the ruTorrent Ratio Rules plugin in the web UI
+# to stop seeding at 2.0 ratio / 7 days instead.
 
 ### Email Notifications ###
 method.set_key = event.download.inserted_new,notify_torrent_added,"execute={/data/scripts/notification_agent.py,added,$d.name=,$d.directory=,$d.size_bytes=,$d.hash=}"
