@@ -58,6 +58,8 @@
   - [Running route23](#running-route23)
   - [Checking Status](#checking-status)
   - [Force Rotation](#force-rotation)
+    - [Run It in the Background](#run-it-in-the-background)
+    - [Starting Over From Scratch](#starting-over-from-scratch)
   - [Preload from Remote (Optional)](#preload-from-remote-optional)
   - [Recovery: Repreload and Force Preload](#recovery-repreload-and-force-preload)
   - [Automating with Cron](#automating-with-cron)
@@ -126,11 +128,11 @@ cp .env.example .env  # Create your configuration file
 
 Before editing `.env`, gather these credentials:
 
-| What You Need                | Where to Get It                                              | Notes                                                              |
-| ---------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------ |
-| VPN credentials              | Your VPN provider dashboard                                  | See [VPN Configuration](#vpn-configuration) for detailed guides    |
-| Local network subnet         | Run: `ip route \| awk '$1 ~ /^192\.168\./ {print $1; exit}'` | Usually `192.168.1.0/24` or `192.168.0.0/24`                       |
-| Email credentials (optional) | Your email provider                                          | See [Email Notifications](#email-notifications-optional) for setup |
+| What You Need                | Where to Get It                                              | Notes                                                                                        |
+| ---------------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| VPN credentials              | Your VPN provider dashboard                                  | See [VPN Configuration](#vpn-configuration) for detailed guides                              |
+| Local network subnet         | Run: `ip route \| awk '$1 ~ /^192\.168\./ {print $1; exit}'` | Set on `vpn.environment.FIREWALL_OUTBOUND_SUBNETS` in `compose.yml` (ships as `192.168.1.0/24`) |
+| Email credentials (optional) | Your email provider                                          | See [Email Notifications](#email-notifications-optional) for setup                           |
 
 **4. Edit Configuration**
 
@@ -312,6 +314,14 @@ Common values are `192.168.1.0/24`, `192.168.0.0/24`, or `10.0.0.0/24`. If the c
 ip -4 addr show | grep inet | grep -v 127.0.0.1 | awk '{print $2}'
 ```
 
+This value is not an `.env` variable — set it directly on the `vpn` service in `compose.yml`:
+
+```yaml
+vpn:
+  environment:
+    FIREWALL_OUTBOUND_SUBNETS: 192.168.1.0/24 # Replace with YOUR subnet
+```
+
 #### Web UI Credentials (Required)
 
 Choose a username and password for accessing the ruTorrent web interface. These are credentials you create yourself - pick something secure. You'll need these in step 3.
@@ -327,43 +337,60 @@ See [Email Notifications](#email-notifications-optional) for provider-specific i
 
 ### 3. Create Environment File
 
-Create a `.env` file in the route23 directory with your configuration:
+Copy `.env.example` to `.env` and fill in your values:
+
+```bash
+cp .env.example .env
+```
 
 ```bash
 # ============================================
 # VPN Configuration (Required)
 # ============================================
-# Get these credentials from your VPN provider dashboard
-# See VPN Configuration section for provider-specific guides
+# compose.yml ships configured for AirVPN over WireGuard. To use a different
+# provider, change VPN_SERVICE_PROVIDER on the `vpn` service in compose.yml and
+# supply that provider's variables (see the VPN Configuration section).
 
-VPN_SERVICE="nordvpn"                    # Your VPN provider name
-NORDVPN_TOKEN=your_token_here            # Replace with your VPN token/username
-WIREGUARD_PRIVATE_KEY=your_key_here      # Replace with your WireGuard private key
+AIRVPN_PORT=your_forwarded_port          # Forwarded port from your AirVPN client area
+AIRVPN_SERVER_COUNTRIES=Country          # e.g. Netherlands
+AIRVPN_SERVER_CITIES=City                # e.g. Amsterdam
 
-# ============================================
-# Network Configuration (Required)
-# ============================================
-# Find your subnet with: ip route show | awk '/proto kernel/ && /192\.168\./ {print $1}'
-# Common values: 192.168.1.0/24, 192.168.0.0/24, 10.0.0.0/24
+WIREGUARD_PRIVATE_KEY=wireguard_private_key
+WIREGUARD_PRESHARED_KEY=wireguard_preshared_key
+WIREGUARD_ADDRESSES=wireguard_addresses  # e.g. 10.128.0.2/32
 
-PRIVATE_SUBNET="192.168.0.0/24"          # Replace with YOUR local network subnet
+# Only needed if you switch compose.yml to OpenVPN or NordVPN:
+# OPENVPN_USER=your_username
+# OPENVPN_PASSWORD=your_password
+# NORDVPN_TOKEN=nordvpn_token
+# VPN_SERVICE=nordvpn
 
 # ============================================
 # System Configuration (Required)
 # ============================================
 
-TIMEZONE="America/New_York"              # Your timezone (e.g., America/Chicago, Europe/London)
-SERVER_NAME="route23"                    # Hostname for your server (can be anything)
+TIMEZONE=America/New_York                # Your timezone (e.g., America/Chicago, Europe/London)
+NGINX_SERVER_NAME=route23                # Hostname served by nginx; also the label in emails
 
 # ============================================
 # ruTorrent Web UI Credentials (Required)
 # ============================================
 # CREATE YOUR OWN username and password here
-# You'll use these in Step 4 with htpasswd command
+# You'll use these in Step 4 with the htpasswd command
 # You'll also use these to login to the web UI
 
 RTORRENT_USER=your_username              # Choose your own username
 RTORRENT_PASS=your_password              # Choose your own password
+
+# ============================================
+# Remote Preload (Optional)
+# ============================================
+# See "Preload from Remote" below. PRELOAD_ENABLED lives in compose.yml.
+
+PRELOAD_HOST=192.168.1.120               # Your media server
+PRELOAD_USER=user                        # SSH user on that machine
+PRELOAD_SSH_KEY=/keys/id_rsa             # Key path INSIDE the container
+PRELOAD_REMOTE_DIR=/mnt/plex/Media/Movies
 
 # ============================================
 # Email Notifications (Optional)
@@ -371,11 +398,13 @@ RTORRENT_PASS=your_password              # Choose your own password
 # Leave blank or comment out if you don't want email notifications
 # See Email Notifications section for provider setup guides
 
-POSTFIX_EMAIL=youremail@gmail.com        # Your email address
+POSTFIX_EMAIL=youremail@gmail.com        # Your email address (also the digest recipient)
 POSTFIX_PASSWORD=your_app_password       # App password from email provider (not your regular password)
 POSTFIX_HOSTNAME=mail.website.com        # Optional: Your domain name
 POSTFIX_ALLOWED_SENDER_DOMAINS="servername localhost website.com"  # Add your domain if using POSTFIX_HOSTNAME
 ```
+
+> **Note:** `NGINX_SERVER_NAME` is used in three places — the nginx `server_name`, the `SERVER_NAME` label in notification emails, and the postfix hostname context. `POSTFIX_EMAIL` doubles as both the SMTP relay username and the `NOTIFY_EMAIL` recipient for preload digests.
 
 ### 4. Create ruTorrent Authentication File
 
@@ -406,7 +435,9 @@ sudo openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
   -subj "/CN=$(hostname)"
 ```
 
-If you have a real certificate (e.g. from Let's Encrypt or an internal CA), drop the PEM files in the same location instead. The `server_name` in `nginx/nginx.conf` defaults to `rustypi3.home.arpa` — change it to match your hostname.
+If you have a real certificate (e.g. from Let's Encrypt or an internal CA), drop the PEM files in the same location instead.
+
+The `server_name` is not hardcoded — `nginx/templates/default.conf.template` is rendered at container start with `NGINX_SERVER_NAME` substituted in (nginx's `envsubst` templating, filtered to `NGINX_`-prefixed variables). Set `NGINX_SERVER_NAME` in `.env` to your hostname; no config file needs editing. The rendered config redirects port 80 to 443, proxies `/` to ruTorrent, and passes `/RPC2` through to rTorrent's XMLRPC socket over SCGI.
 
 ### 6. Start Services
 
@@ -777,28 +808,37 @@ View the current rotation status without making changes:
 docker compose run --rm -e SHOW_STATUS=true app
 ```
 
-This displays:
-
-- Total number of torrents in your collection
-- Current batch being seeded
-- Batch start time
-- Time until next rotation
-- Number of completed batches
-- Progress through your collection
+This displays your collection size, how many torrents rtorrent currently has loaded, progress through the current cycle, the live performance settings, and how much time is left on the current batch.
 
 Example output:
 
 ```
-Status Report
-=============
-Total torrents: 1600
-Batch size: 10
-Current batch: 1-10
-Batch started: 2024-01-15 03:00:00
-Next rotation due: 2024-01-29 03:00:00 (13 days remaining)
-Completed batches: 0
-Progress: 0.6% (10/1600)
+==================================================
+TORRENT ROTATOR STATUS
+==================================================
+Total .torrent files:     1600
+Currently active:         10
+Batch size:               10
+Rotation period:          14 days
+Completed batches:        8
+Seeded this cycle:        80 / 1600
+--------------------------------------------------
+PERFORMANCE SETTINGS
+--------------------------------------------------
+Current system load:      1.42
+Max load threshold:       5.0
+Add delay:                30.0s
+Remove delay:             5.0s
+Load wait time:           30.0s
+Est. rotation time:       ~5m 0s
+--------------------------------------------------
+Batch started:            2026-05-12 03:42
+Time elapsed:             4d 7h
+Time remaining:           9d 16h
+==================================================
 ```
+
+If no rotation has ever run, the last block reads `Status: NOT STARTED`. If the rotation period has already elapsed, it reads `Status: READY TO ROTATE`.
 
 ### Force Rotation
 
@@ -812,12 +852,62 @@ docker compose run --rm -e FORCE_ROTATION=true app
 docker compose run --rm -e FORCE_ROTATION=true -e DELETE_DATA=true app
 ```
 
+> **Note:** `compose.yml` ships with `DELETE_DATA: true`, so a plain forced rotation already removes data. Pass `-e DELETE_DATA=false` if you want to keep it.
+
+A forced rotation:
+
+1. Removes **every** torrent currently loaded in rtorrent — not just the ones route23 added. Anything you added manually through the web UI is removed too, and its data is deleted if `DELETE_DATA=true`.
+2. Waits `STARTUP_DELAY` seconds for the system to settle
+3. Selects the next `BATCH_SIZE` torrents that haven't been seeded in this cycle
+4. Adds them one at a time with `ADD_DELAY` between each, preloading and hash-checking each one if preload is enabled
+5. Saves the new batch to state and sends the digest email
+
 **When to Force Rotation:**
 
 - Testing the rotation system
 - Manually skipping to the next batch
-- Cleaning up disk space with DELETE_DATA=true
-- After changing BATCH_SIZE configuration
+- Cleaning up disk space with `DELETE_DATA=true`
+- After changing `BATCH_SIZE` configuration
+
+#### Run It in the Background
+
+A forced rotation is long-running — with the default `BATCH_SIZE: 10` and `ADD_DELAY: 30` it takes at least five minutes before preload even factors in, and each preloaded torrent adds an SCP transfer (up to a 2 hour timeout per file) plus a hash check (up to 10 minutes). A full batch of large movies can run for hours.
+
+`docker compose run` is attached and interactive: if your SSH session drops, the rotation is killed partway through, potentially after torrents have been removed but before the new batch is added. Always background it on a remote machine. The included wrapper does exactly that — it creates `./logs`, backgrounds the run, and redirects output:
+
+```bash
+./exe/force_rotation.sh
+
+tail -f ./logs/route23_rotation.log
+```
+
+Or roll your own so it survives a disconnect:
+
+```bash
+mkdir -p ./logs
+nohup docker compose run --rm -e FORCE_ROTATION=true -e DELETE_DATA=true app \
+  > ./logs/route23_rotation.log 2>&1 &
+
+tail -f ./logs/route23_rotation.log
+```
+
+You do not need `--profile route23` on these commands. `docker compose run` enables the target service's profile automatically, and Compose rejects `--profile` when it appears after the `run` subcommand.
+
+The rotation is finished when the log ends with `Rotation complete. Added N/N torrents.`
+
+#### Starting Over From Scratch
+
+Forcing a rotation advances to the **next** batch — it does not restart the collection from the beginning. To wipe all progress and begin the collection again:
+
+```bash
+# 1. Remove all torrents and their data, then start the next batch
+./exe/force_rotation.sh
+
+# 2. Once it finishes, reset the cycle so the next rotation starts from torrent #1
+rm ./rutorrent/data/states/route23_state.json
+```
+
+Deleting the state file clears `seeded_this_cycle`, `completed_batches`, and `torrent_history`, so the following rotation starts at the top of your collection. With `SORT_ORDER: random` a fresh `sort_seed` is generated, giving a different ordering than the previous cycle.
 
 ### Preload from Remote (Optional)
 
@@ -867,7 +957,7 @@ When preload fails for one or more torrents (the remote machine was offline, the
 ```bash
 docker compose run --rm -e REPRELOAD=true app
 
-# Or the wrapper that backgrounds it and writes to ./logs:
+# Or the wrapper that backgrounds it and logs to ./logs/route23_preload.log:
 ./exe/force_preload.sh
 ```
 
@@ -885,7 +975,9 @@ When only one torrent failed and you don't want to touch the others, target it s
 ./exe/force_preload_one.sh "mississippi" "Mississippi Burning (1988) {imdb-tt0095647}"
 ```
 
-The substring matches case-insensitively against `.torrent` filenames in the current batch (and falls back to the full torrent directory if there's no match there). The optional second argument bypasses the auto-matcher entirely — use it when the Plex directory name differs from what the matcher derives from the torrent name (alternate titles, special characters, etc.).
+The substring matches case-insensitively against `.torrent` filenames in the current batch (and falls back to the full torrent directory if there's no match there). If it matches more than one torrent, route23 refuses to guess and asks you to narrow the substring. The optional second argument bypasses the auto-matcher entirely — use it when the Plex directory name differs from what the matcher derives from the torrent name (alternate titles, special characters, etc.).
+
+All three wrappers create `./logs` themselves and run in the background.
 
 After SCP, route23 triggers a hash check, waits for it to complete, and either restarts the torrent (if data is valid) or leaves it stopped with an `ERROR` log line (if the staged bytes didn't match the torrent's pieces — usually a different encode of the same movie). Logs land in `./logs/route23_force_preload.log`.
 
@@ -903,6 +995,9 @@ docker compose run --rm \
 Set up a daily cron job to check for rotation automatically:
 
 ```bash
+# Create the log directory first — cron will not create it for you
+mkdir -p /path/to/route23/logs
+
 # Edit your crontab
 crontab -e
 
@@ -933,61 +1028,80 @@ crontab -e
 
 ### Configuration Options
 
-Configure route23's behavior through environment variables in `compose.yml`:
+Configure route23's behavior through environment variables on the `app` service in `compose.yml`.
+
+Two "default" columns are listed below because they differ: **Code** is what `src/main.py` falls back to if the variable is unset, and **compose.yml** is what this repo actually ships. The shipped value wins unless you edit it or override it on the command line with `-e`.
+
+#### Paths and Connection
+
+| Variable        | Code default                    | compose.yml                  | Description                                            |
+| --------------- | ------------------------------- | ---------------------------- | ------------------------------------------------------ |
+| `TORRENT_DIR`   | `/torrents`                     | `/torrents`                  | Source of `.torrent` files (`./rutorrent/torrents`, ro) |
+| `STATE_FILE`    | `/states/route23_state.json`    | `/states/route23_state.json` | Rotation state (`./rutorrent/data/states/`)            |
+| `DOWNLOAD_DIR`  | `/downloads/route23`            | `/downloads/route23`         | Where data lands (`./rutorrent/downloads/route23`)     |
+| `RTORRENT_URL`  | `http://localhost:8080/RPC2`    | `http://vpn:18000`           | rTorrent XMLRPC endpoint                               |
+| `RTORRENT_USER` | (empty)                         | `${RTORRENT_USER}`           | Injected into the XMLRPC URL when both are set         |
+| `RTORRENT_PASS` | (empty)                         | `${RTORRENT_PASS}`           | Masked in the startup config log                       |
 
 #### Core Settings
 
-| Variable        | Default | Description                              |
-| --------------- | ------- | ---------------------------------------- |
-| `BATCH_SIZE`    | `10`    | Number of torrents per rotation batch    |
-| `ROTATION_DAYS` | `14`    | Days before rotating to next batch       |
-| `DELETE_DATA`   | `false` | Delete downloaded data when rotating out |
+| Variable        | Code default | compose.yml | Description                              |
+| --------------- | ------------ | ----------- | ---------------------------------------- |
+| `BATCH_SIZE`    | `20`         | `10`        | Number of torrents per rotation batch    |
+| `ROTATION_DAYS` | `14`         | `14`        | Days before rotating to next batch       |
+| `DELETE_DATA`   | `false`      | `true`      | Delete downloaded data when rotating out |
 
 #### Performance Settings (for Raspberry Pi)
 
-| Variable        | Default | Description                                       |
-| --------------- | ------- | ------------------------------------------------- |
-| `ADD_DELAY`     | `30`    | Seconds to wait between adding each torrent       |
-| `REMOVE_DELAY`  | `5`     | Seconds to wait between removing each torrent     |
-| `MAX_LOAD`      | `4.0`   | Pause operations if system load exceeds this      |
-| `LOAD_WAIT`     | `30`    | Seconds to wait when load is high before retrying |
-| `STARTUP_DELAY` | `10`    | Seconds to wait before starting operations        |
+| Variable        | Code default | compose.yml | Description                                       |
+| --------------- | ------------ | ----------- | ------------------------------------------------- |
+| `ADD_DELAY`     | `30`         | `30`        | Seconds to wait between adding each torrent       |
+| `REMOVE_DELAY`  | `5`          | `5`         | Seconds to wait between removing each torrent     |
+| `MAX_LOAD`      | `4.0`        | `5.0`       | Pause operations if 1-minute load exceeds this    |
+| `LOAD_WAIT`     | `30`         | `30`        | Seconds to wait when load is high before retrying |
+| `STARTUP_DELAY` | `10`         | `10`        | Seconds to wait after removals, before adding     |
 
 #### Advanced Settings
 
-| Variable                    | Default         | Description                                                                           |
-| --------------------------- | --------------- | ------------------------------------------------------------------------------------- |
-| `FORCE_ROTATION`            | `false`         | Force immediate rotation regardless of time                                           |
-| `SHOW_STATUS`               | `false`         | Display status information only (no changes)                                          |
-| `REPRELOAD`                 | `false`         | Re-run preload against every torrent in the current batch (see [Recovery](#recovery-repreload-and-force-preload)) |
-| `FORCE_PRELOAD_TORRENT`     | (empty)         | Substring identifying a single torrent to force-preload                               |
-| `FORCE_PRELOAD_REMOTE_DIR`  | (empty)         | Optional exact remote directory to skip the auto-matcher                              |
-| `SORT_ORDER`                | `alphabetical`  | Order to cycle through torrents: `alphabetical`, `reverse`, `random`, `date_added`    |
-| `LOG_LEVEL`                 | `INFO`          | Logging verbosity (DEBUG, INFO, WARNING, ERROR)                                       |
+| Variable                   | Code default   | compose.yml | Description                                                                                                       |
+| -------------------------- | -------------- | ----------- | ----------------------------------------------------------------------------------------------------------------- |
+| `FORCE_ROTATION`           | `false`        | `false`     | Force immediate rotation regardless of time                                                                       |
+| `SHOW_STATUS`              | `false`        | `false`     | Display status information only (no changes)                                                                      |
+| `REPRELOAD`                | `false`        | unset       | Re-run preload against every torrent in the current batch (see [Recovery](#recovery-repreload-and-force-preload)) |
+| `FORCE_PRELOAD_TORRENT`    | (empty)        | unset       | Substring identifying a single torrent to force-preload                                                           |
+| `FORCE_PRELOAD_REMOTE_DIR` | (empty)        | unset       | Optional exact remote directory to skip the auto-matcher                                                          |
+| `SORT_ORDER`               | `alphabetical` | `random`    | Order to cycle through torrents: `alphabetical`, `reverse`, `random`, `date_added`                                |
+| `LOG_LEVEL`                | `INFO`         | `INFO`      | Logging verbosity (DEBUG, INFO, WARNING, ERROR)                                                                   |
+
+These flags are checked in priority order, and only one runs per invocation: `SHOW_STATUS` → `FORCE_PRELOAD_TORRENT` → `REPRELOAD` → normal rotation. Setting `SHOW_STATUS=true` alongside `FORCE_ROTATION=true` prints status and rotates nothing.
 
 #### Preload Settings (Optional)
 
 Enable and configure remote preload. See [Preload from Remote](#preload-from-remote-optional) for the conceptual overview.
 
-| Variable             | Default         | Description                                                                  |
-| -------------------- | --------------- | ---------------------------------------------------------------------------- |
-| `PRELOAD_ENABLED`    | `false`         | Master switch — must be `true` for preload to run                            |
-| `PRELOAD_HOST`       | (empty)         | Hostname or IP of the remote media server                                    |
-| `PRELOAD_USER`       | (empty)         | SSH username on the remote                                                   |
-| `PRELOAD_SSH_KEY`    | `/keys/id_rsa`  | Path to the SSH private key inside the container                             |
-| `PRELOAD_REMOTE_DIR` | (empty)         | Remote directory to search (e.g., `/mnt/plex/Media/Movies`)                  |
+| Variable             | Code default   | compose.yml             | Description                                                 |
+| -------------------- | -------------- | ----------------------- | ----------------------------------------------------------- |
+| `PRELOAD_ENABLED`    | `false`        | `true`                  | Master switch — must be `true` for preload to run           |
+| `PRELOAD_HOST`       | (empty)        | `${PRELOAD_HOST}`       | Hostname or IP of the remote media server                   |
+| `PRELOAD_USER`       | (empty)        | `${PRELOAD_USER}`       | SSH username on the remote                                  |
+| `PRELOAD_SSH_KEY`    | `/keys/id_rsa` | `${PRELOAD_SSH_KEY}`    | Path to the SSH private key inside the container            |
+| `PRELOAD_REMOTE_DIR` | (empty)        | `${PRELOAD_REMOTE_DIR}` | Remote directory to search (e.g., `/mnt/plex/Media/Movies`) |
+
+If `PRELOAD_ENABLED=true` but `PRELOAD_HOST`, `PRELOAD_USER`, or `PRELOAD_REMOTE_DIR` is blank, route23 logs an error and continues with preload disabled — rotation still runs, torrents just download from the swarm as normal.
 
 #### Notification Settings (Optional)
 
 After a rotation, repreload, or force-preload run, route23 can send a digest email summarizing what was preloaded and what was missed.
 
-| Variable      | Default              | Description                                                          |
-| ------------- | -------------------- | -------------------------------------------------------------------- |
-| `SMTP_SERVER` | `route23-postfix`    | SMTP relay (defaults to the included postfix container)              |
-| `SMTP_PORT`   | `25`                 | SMTP port                                                            |
-| `FROM_EMAIL`  | `torrents@website.com` | Sender address                                                     |
-| `NOTIFY_EMAIL`| (empty)              | Recipient for the digest. Leave blank to disable.                    |
-| `SERVER_NAME` | `route23`            | Server label shown in the email header                               |
+| Variable       | Code default           | compose.yml             | Description                                             |
+| -------------- | ---------------------- | ----------------------- | ------------------------------------------------------- |
+| `SMTP_SERVER`  | `route23-postfix`      | `route23-postfix`       | SMTP relay (defaults to the included postfix container) |
+| `SMTP_PORT`    | `25`                   | `25`                    | SMTP port                                               |
+| `FROM_EMAIL`   | `torrents@website.com` | `torrents@<your-domain>` | Sender address — change this to your own domain        |
+| `NOTIFY_EMAIL` | (empty)                | `${POSTFIX_EMAIL}`      | Recipient for the digest. Leave blank to disable.       |
+| `SERVER_NAME`  | `route23`              | `${NGINX_SERVER_NAME}`  | Server label shown in the email header                  |
+
+The digest is sent once at the end of a rotation, repreload, or force-preload run, summarizing every torrent that was preloaded and every one that was missed (with the reason). If `NOTIFY_EMAIL` is blank the results are simply discarded.
 
 **Example Configuration for Heavy Load:**
 
@@ -1083,6 +1197,10 @@ rm ./rutorrent/data/states/route23_state.json
 cp ./rutorrent/data/states/route23_state.json ./rutorrent/data/states/route23_state.json.backup
 ```
 
+**Deleting the state file does not touch rtorrent.** Torrents already loaded stay loaded and keep seeding; route23 just loses track of them. To get a clean slate, force a rotation first (which removes them) and delete the state file afterward — see [Starting Over From Scratch](#starting-over-from-scratch).
+
+**Migration note:** state files written before `seeded_this_cycle` existed are upgraded automatically on first load, backfilled from `torrent_history` so existing installs don't re-seed torrents they've already been through.
+
 ## Additional Features
 
 While route23 is the core automation, these additional features enhance the overall experience.
@@ -1107,7 +1225,7 @@ https://<server-ip>
 Use the username and password you configured with `htpasswd` during installation.
 
 **Downloaded Files:**
-Completed downloads are saved to `./rutorrent/downloads/complete/`
+Torrents added by the rotator download to `./rutorrent/downloads/route23/` (set by `DOWNLOAD_DIR`) — this is also where preload stages files. Torrents you add manually through the web UI follow ruTorrent's own paths, `./rutorrent/downloads/temp/` while in progress and `./rutorrent/downloads/complete/` when finished.
 
 ### Move Completed Downloads
 
@@ -1143,11 +1261,15 @@ route23/
 ├── .env.example               # Template for .env
 ├── pyproject.toml             # Python project metadata
 ├── VERSION                    # Version stamp
+├── CONTRIBUTING.md            # Contribution guidelines
 ├── logo.png                   # Project logo
 ├── src/
 │   └── main.py                # Core rotation logic (rotator, preload, recovery modes)
 ├── nginx/
-│   └── nginx.conf             # Reverse proxy configuration
+│   ├── nginx.conf             # Base http block (mounted read-only)
+│   └── templates/
+│       └── default.conf.template  # Server blocks; NGINX_SERVER_NAME substituted at startup
+├── .github/                   # CI workflows (build, publish, security scan)
 ├── exe/
 │   ├── backup.sh              # Backup utility
 │   ├── fix-torrent-permissions.sh  # Normalize ownership on the preload source
@@ -1169,9 +1291,11 @@ route23/
 │   │   └── rutorrent.htpasswd # Authentication (create this)
 │   ├── torrents/              # Place .torrent files here
 │   └── downloads/             # Downloaded content
-│       └── route23/           # Downloads in rotation
+│       ├── route23/           # Downloads in rotation (DOWNLOAD_DIR)
+│       ├── complete/          # ruTorrent completed downloads
+│       └── temp/              # ruTorrent in-progress downloads
 ├── docs/                      # VPN provider setup instructions
-└── logs/                      # Log files (create this)
+└── logs/                      # Log files (create this: mkdir -p ./logs)
 ```
 
 ## Troubleshooting
@@ -1212,6 +1336,30 @@ environment:
 ```bash
 docker compose run --rm -e SHOW_STATUS=true app
 ```
+
+### Rotation Stopped Partway Through
+
+`docker compose run` is attached — closing the terminal or losing an SSH session kills the rotation. If it died after removals but before the new batch was added, rtorrent will be empty. Re-run the forced rotation; it is safe to repeat.
+
+```bash
+./exe/force_rotation.sh
+```
+
+Background long-running rotations so this can't happen — see [Run It in the Background](#run-it-in-the-background).
+
+### Torrent Stuck at 0% After Preload
+
+The staged file was the right byte length but the wrong encode, so it failed the hash check. route23 stops the torrent deliberately and logs `Preload verify: ... is 0% after hash check`. Either force-preload it against the correct remote directory:
+
+```bash
+./exe/force_preload_one.sh "movie name" "Exact Plex Dir (1988) {imdb-tt0095647}"
+```
+
+Or start the torrent manually in the web UI to download it from the swarm instead.
+
+### `unknown flag: --profile`
+
+Compose only accepts `--profile` before the subcommand (`docker compose --profile route23 run ...`), never after it. You don't need it at all: `docker compose run app` enables the `route23` profile automatically because `app` belongs to it. If you see this error, you're on an older copy of the `exe/` scripts — update them or drop the flag.
 
 ## Contributing
 
