@@ -90,8 +90,8 @@ schedule = low_diskspace, 60, 300, ((close_low_diskspace, 15000M))
 # to stop seeding at 2.0 ratio / 7 days instead.
 
 ### Email Notifications ###
-method.set_key = event.download.inserted_new,notify_torrent_added,"execute={/data/scripts/notification_agent.py,added,$d.name=,$d.directory=,$d.size_bytes=,$d.hash=}"
-method.set_key = event.download.finished,notify_torrent_finished,"execute={/data/scripts/notification_agent.py,completed,$d.name=,$d.directory=,$d.size_bytes=,$d.hash=}"
+method.set_key = event.download.inserted_new,notify_torrent_added,"execute.nothrow.bg={/data/scripts/notification_agent.py,added,$d.name=,$d.directory=,$d.size_bytes=,$d.hash=}"
+method.set_key = event.download.finished,notify_torrent_finished,"execute.nothrow.bg={/data/scripts/notification_agent.py,completed,$d.name=,$d.directory=,$d.size_bytes=,$d.hash=}"
 
 ### Logging ###
 log.open_file = "rtorrent", (cat, (cfg.logs), "rtorrent.log")
