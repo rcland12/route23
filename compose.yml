@@ -20,31 +20,31 @@ services:
     environment:
       TZ: ${TIMEZONE}
       TORRENT_DIR: /torrents
-      RTORRENT_URL: http://vpn:18000
+      RTORRENT_URL: http://vpn:${XMLRPC_PORT:-18000}
       RTORRENT_USER: ${RTORRENT_USER}
       RTORRENT_PASS: ${RTORRENT_PASS}
       STATE_FILE: /states/route23_state.json
-      DOWNLOAD_DIR: /downloads/route23
-      BATCH_SIZE: 10
-      ROTATION_DAYS: 14
-      ADD_DELAY: 30
-      REMOVE_DELAY: 5
-      MAX_LOAD: 5.0
-      LOAD_WAIT: 30
-      STARTUP_DELAY: 10
-      FORCE_ROTATION: false
-      DELETE_DATA: true
-      SHOW_STATUS: false
-      SORT_ORDER: random
-      LOG_LEVEL: INFO
-      PRELOAD_ENABLED: true
+      DOWNLOAD_DIR: ${RT_DOWNLOAD_DIR:-/downloads/route23}
+      BATCH_SIZE: ${BATCH_SIZE:-10}
+      ROTATION_DAYS: ${ROTATION_DAYS:-14}
+      ADD_DELAY: ${ADD_DELAY:-30}
+      REMOVE_DELAY: ${REMOVE_DELAY:-5}
+      MAX_LOAD: ${MAX_LOAD:-5.0}
+      LOAD_WAIT: ${LOAD_WAIT:-30}
+      STARTUP_DELAY: ${STARTUP_DELAY:-10}
+      FORCE_ROTATION: ${FORCE_ROTATION:-false}
+      DELETE_DATA: ${DELETE_DATA:-true}
+      SHOW_STATUS: ${SHOW_STATUS:-false}
+      SORT_ORDER: ${SORT_ORDER:-random}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      PRELOAD_ENABLED: ${PRELOAD_ENABLED:-true}
       PRELOAD_HOST: ${PRELOAD_HOST}
       PRELOAD_USER: ${PRELOAD_USER}
       PRELOAD_SSH_KEY: ${PRELOAD_SSH_KEY}
       PRELOAD_REMOTE_DIR: ${PRELOAD_REMOTE_DIR}
-      SMTP_SERVER: route23-postfix
-      SMTP_PORT: 25
-      FROM_EMAIL: torrents@russellland.dev
+      SMTP_SERVER: ${SMTP_SERVER:-route23-postfix}
+      SMTP_PORT: ${SMTP_PORT:-25}
+      FROM_EMAIL: ${FROM_EMAIL}
       NOTIFY_EMAIL: ${POSTFIX_EMAIL}
       SERVER_NAME: ${NGINX_SERVER_NAME}
     volumes:
@@ -52,24 +52,29 @@ services:
       - ./rutorrent/data/states:/states
       - ./rutorrent/downloads:/downloads
       - /proc/loadavg:/proc/loadavg:ro
-      - ${HOME}/.ssh/id_rsa:/keys/id_rsa:ro
+      - ${PRELOAD_SSH_KEY_HOST}:/keys/id_rsa:ro
 
   nginx:
     container_name: route23-nginx
     image: nginx:alpine
     restart: unless-stopped
+    depends_on:
+      vpn:
+        condition: service_healthy
     networks:
       - route23
     ports:
-      - 80:80
-      - 443:443
+      - ${HTTP_PORT:-80}:80
+      - ${HTTPS_PORT:-443}:443
     environment:
       NGINX_SERVER_NAME: ${NGINX_SERVER_NAME}
+      NGINX_RUTORRENT_PORT: ${RUTORRENT_PORT:-8080}
+      NGINX_XMLRPC_PORT: ${XMLRPC_PORT:-18000}
       NGINX_ENVSUBST_FILTER: "NGINX_"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/templates:/etc/nginx/templates:ro
-      - /etc/nginx/certs:/etc/nginx/certs:ro
+      - ${NGINX_CERTS_DIR:-/etc/nginx/certs}:/etc/nginx/certs:ro
     healthcheck:
       test: ["CMD-SHELL", "nginx -t || exit 1"]
       interval: 30s
@@ -81,25 +86,36 @@ services:
     container_name: route23-rutorrent
     image: crazymax/rtorrent-rutorrent:latest
     restart: unless-stopped
+    stop_grace_period: ${STOP_GRACE_PERIOD:-5m}
     network_mode: "service:vpn"
     depends_on:
+      config:
+        condition: service_completed_successfully
       vpn:
         condition: service_healthy
       postfix:
         condition: service_healthy
     environment:
-      PUID: 1000
-      PGID: 1000
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
       TZ: ${TIMEZONE}
-      RT_LOG_LEVEL: info
-      MEMORY_LIMIT: 256M
-      XMLRPC_PORT: 18000
-      SMTP_SERVER: route23-postfix
-      SMTP_PORT: 25
-      FROM_EMAIL: torrents@russellland.dev
+      RT_LOG_LEVEL: ${RT_LOG_LEVEL:-info}
+      MEMORY_LIMIT: ${PHP_MEMORY_LIMIT:-256M}
+      RUTORRENT_PORT: ${RUTORRENT_PORT:-8080}
+      XMLRPC_PORT: ${XMLRPC_PORT:-18000}
+      XMLRPC_SIZE_LIMIT: ${RT_XMLRPC_SIZE_LIMIT:-64M}
+      WEBDAV_PORT: ${WEBDAV_PORT:-9000}
+      RT_INC_PORT: ${AIRVPN_PORT}
+      RT_DHT_PORT: ${RT_DHT_PORT:-6881}
+      RT_SEND_BUFFER_SIZE: ${RT_SEND_BUFFER_SIZE:-1M}
+      RT_RECEIVE_BUFFER_SIZE: ${RT_RECEIVE_BUFFER_SIZE:-1M}
+      RT_SESSION_SAVE_SECONDS: ${RT_SESSION_SAVE_SECONDS:-3600}
+      RT_PREALLOCATE_TYPE: ${RT_PREALLOCATE_TYPE:-0}
+      SMTP_SERVER: ${SMTP_SERVER:-route23-postfix}
+      SMTP_PORT: ${SMTP_PORT:-25}
+      FROM_EMAIL: ${FROM_EMAIL}
       TO_EMAIL: ${POSTFIX_EMAIL}
       SERVER_NAME: ${NGINX_SERVER_NAME}
-      RT_INC_PORT: ${AIRVPN_PORT}
     ulimits:
       nproc: 65535
       nofile:
@@ -110,6 +126,42 @@ services:
       - ./rutorrent/downloads:/downloads
       - ./rutorrent/passwd:/passwd
 
+  config:
+    container_name: route23-config
+    image: nginx:alpine
+    restart: no
+    networks:
+      - route23
+    command: >
+      sh -c "envsubst \"$$RT_VARS\" < /tmpl/rtorrent.rc.tmpl > /data/rtorrent/.rtorrent.rc &&
+             chown $$PUID:$$PGID /data/rtorrent/.rtorrent.rc &&
+             echo 'rendered .rtorrent.rc'"
+    environment:
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      RT_VARS: '$${RT_DOWNLOAD_DIR} $${RT_MAX_UPLOADS_GLOBAL} $${RT_MIN_PEERS_NORMAL} $${RT_MAX_PEERS_NORMAL} $${RT_MIN_PEERS_SEED} $${RT_MAX_PEERS_SEED} $${RT_MAX_UPLOADS} $${RT_GLOBAL_DOWN_KB} $${RT_GLOBAL_UP_KB} $${RT_PIECES_MEMORY} $${RT_FILE_MAX_SIZE} $${RT_PRELOAD_TYPE} $${RT_HASH_ON_COMPLETION} $${RT_SYNC_ALWAYS_SAFE} $${RT_NUMWANT} $${RT_DHT_MODE} $${RT_XMLRPC_SIZE_LIMIT} $${RT_LOW_DISKSPACE}'
+      RT_DOWNLOAD_DIR: ${RT_DOWNLOAD_DIR:-/downloads/route23}
+      RT_MAX_UPLOADS_GLOBAL: ${RT_MAX_UPLOADS_GLOBAL:-100}
+      RT_MIN_PEERS_NORMAL: ${RT_MIN_PEERS_NORMAL:-10}
+      RT_MAX_PEERS_NORMAL: ${RT_MAX_PEERS_NORMAL:-50}
+      RT_MIN_PEERS_SEED: ${RT_MIN_PEERS_SEED:-10}
+      RT_MAX_PEERS_SEED: ${RT_MAX_PEERS_SEED:-50}
+      RT_MAX_UPLOADS: ${RT_MAX_UPLOADS:-15}
+      RT_GLOBAL_DOWN_KB: ${RT_GLOBAL_DOWN_KB:-0}
+      RT_GLOBAL_UP_KB: ${RT_GLOBAL_UP_KB:-0}
+      RT_PIECES_MEMORY: ${RT_PIECES_MEMORY:-256M}
+      RT_FILE_MAX_SIZE: ${RT_FILE_MAX_SIZE:-200G}
+      RT_PRELOAD_TYPE: ${RT_PRELOAD_TYPE:-0}
+      RT_HASH_ON_COMPLETION: ${RT_HASH_ON_COMPLETION:-yes}
+      RT_SYNC_ALWAYS_SAFE: ${RT_SYNC_ALWAYS_SAFE:-yes}
+      RT_NUMWANT: ${RT_NUMWANT:-100}
+      RT_DHT_MODE: ${RT_DHT_MODE:-auto}
+      RT_XMLRPC_SIZE_LIMIT: ${RT_XMLRPC_SIZE_LIMIT:-64M}
+      RT_LOW_DISKSPACE: ${RT_LOW_DISKSPACE:-5000M}
+    volumes:
+      - ./rtorrent:/tmpl:ro
+      - ./rutorrent/data:/data
+
   vpn:
     container_name: route23-vpn
     image: qmcgaw/gluetun:v3.41
@@ -117,15 +169,15 @@ services:
     networks:
       - route23
     environment:
-      VPN_SERVICE_PROVIDER: airvpn
-      VPN_TYPE: wireguard
+      VPN_SERVICE_PROVIDER: ${VPN_SERVICE_PROVIDER:-airvpn}
+      VPN_TYPE: ${VPN_TYPE:-wireguard}
       WIREGUARD_PRIVATE_KEY: ${WIREGUARD_PRIVATE_KEY}
       WIREGUARD_PRESHARED_KEY: ${WIREGUARD_PRESHARED_KEY}
       WIREGUARD_ADDRESSES: ${WIREGUARD_ADDRESSES}
       SERVER_COUNTRIES: ${AIRVPN_SERVER_COUNTRIES}
       SERVER_CITIES: ${AIRVPN_SERVER_CITIES}
       FIREWALL_VPN_INPUT_PORTS: ${AIRVPN_PORT}
-      FIREWALL_OUTBOUND_SUBNETS: 192.168.1.0/24
+      FIREWALL_OUTBOUND_SUBNETS: ${LAN_SUBNET:-192.168.1.0/24}
       DNS_UPSTREAM_RESOLVER_TYPE: dot
       DNS_UPSTREAM_RESOLVERS: "cloudflare,quad9"
       DNS_UPSTREAM_IPV6: off
@@ -163,15 +215,15 @@ services:
     networks:
       - route23
     ports:
-      - 127.0.0.1:2525:25
+      - 127.0.0.1:${POSTFIX_LOCAL_PORT:-2525}:25
     environment:
-      RELAYHOST: "[smtp.gmail.com]:587"
+      RELAYHOST: "${POSTFIX_RELAYHOST:-[smtp.gmail.com]:587}"
       RELAYHOST_USERNAME: ${POSTFIX_EMAIL}
       RELAYHOST_PASSWORD: ${POSTFIX_PASSWORD}
       HOSTNAME: ${POSTFIX_HOSTNAME}
       ALLOWED_SENDER_DOMAINS: ${POSTFIX_ALLOWED_SENDER_DOMAINS}
       MYNETWORKS: 127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
-      POSTFIX_message_size_limit: 52428800
+      POSTFIX_message_size_limit: ${POSTFIX_MESSAGE_SIZE_LIMIT:-52428800}
       SMTP_HEADER_CHECKS: regexp:/etc/postfix/smtp_header_checks
       SMTP_TLS_SECURITY_LEVEL: may
       SMTP_USE_TLS: yes

@@ -3,35 +3,35 @@
 # Do not edit the generated file; edit the template and re-render.
 #############################################################################
 
-directory.default.set = /downloads/route23
+directory.default.set = ${RT_DOWNLOAD_DIR}
 
 ### Connection Limits ###
-throttle.max_uploads.global.set = 100
-throttle.min_peers.normal.set = 30
-throttle.max_peers.normal.set = 80
-throttle.min_peers.seed.set = 20
-throttle.max_peers.seed.set = 60
-throttle.max_uploads.set = 25
+throttle.max_uploads.global.set = ${RT_MAX_UPLOADS_GLOBAL}
+throttle.min_peers.normal.set = ${RT_MIN_PEERS_NORMAL}
+throttle.max_peers.normal.set = ${RT_MAX_PEERS_NORMAL}
+throttle.min_peers.seed.set = ${RT_MIN_PEERS_SEED}
+throttle.max_peers.seed.set = ${RT_MAX_PEERS_SEED}
+throttle.max_uploads.set = ${RT_MAX_UPLOADS}
 
 ### Bandwidth ###
-throttle.global_down.max_rate.set_kb = 0
-throttle.global_up.max_rate.set_kb = 0
+throttle.global_down.max_rate.set_kb = ${RT_GLOBAL_DOWN_KB}
+throttle.global_up.max_rate.set_kb = ${RT_GLOBAL_UP_KB}
 
 ### Memory & Performance ###
-pieces.memory.max.set = 512M
-system.file.max_size.set = 200G
+pieces.memory.max.set = ${RT_PIECES_MEMORY}
+system.file.max_size.set = ${RT_FILE_MAX_SIZE}
 system.umask.set = 0022
 
 ### Preloading (SSD: type 2, HDD: type 0) ###
-pieces.preload.type.set = 0
+pieces.preload.type.set = ${RT_PRELOAD_TYPE}
 pieces.preload.min_size.set = 524288
 pieces.preload.min_rate.set = 10240
 
 ### Hash Checking ###
-pieces.hash.on_completion.set = yes
+pieces.hash.on_completion.set = ${RT_HASH_ON_COMPLETION}
 
 ### Sync (HDD: always_safe yes) ###
-pieces.sync.always_safe.set = yes
+pieces.sync.always_safe.set = ${RT_SYNC_ALWAYS_SAFE}
 pieces.sync.timeout.set = 600
 pieces.sync.timeout_safe.set = 900
 
@@ -39,21 +39,21 @@ pieces.sync.timeout_safe.set = 900
 protocol.encryption.set = allow_incoming,try_outgoing,enable_retry
 protocol.pex.set = yes
 trackers.use_udp.set = yes
-trackers.numwant.set = 100
+trackers.numwant.set = ${RT_NUMWANT}
 
 ### DHT ###
-dht.mode.set = auto
+dht.mode.set = ${RT_DHT_MODE}
 
 ### Network ###
 network.tos.set = throughput
-network.xmlrpc.size_limit.set = 64M
+network.xmlrpc.size_limit.set = ${RT_XMLRPC_SIZE_LIMIT}
 
 ### Watch Directory ###
 directory.watch.added = (cat,(cfg.watch)), load.start
 schedule = untied_directory, 5, 5, (cat,"stop_untied=",(cfg.watch),"*.torrent")
 
 ### Disk Space ###
-schedule = low_diskspace, 60, 300, ((close_low_diskspace, 15000M))
+schedule = low_diskspace, 60, 300, ((close_low_diskspace, ${RT_LOW_DISKSPACE}))
 
 ### Email Notifications ###
 method.set_key = event.download.inserted_new,notify_torrent_added,"execute.nothrow.bg={/data/scripts/notification_agent.py,added,$d.name=,$d.directory=,$d.size_bytes=,$d.hash=}"

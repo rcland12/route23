@@ -1,8 +1,12 @@
 #!/bin/bash
 #
 # Fix ownership and permissions on a synced torrents directory.
-# Install at /home/russ/bin/fix-torrent-permissions.sh on each remote device.
-# Make sure it is executable: chmod +x /home/russ/bin/fix-torrent-permissions.sh
+# Install anywhere on PATH (e.g. ~/bin/fix-torrent-permissions.sh) on each
+# remote device and make it executable: chmod +x fix-torrent-permissions.sh
+#
+# Ownership defaults to the invoking user. When run under sudo, it falls back
+# to the user who invoked sudo rather than root. Override either with the
+# TORRENT_OWNER / TORRENT_GROUP environment variables.
 #
 # Usage: fix-torrent-permissions.sh <directory>
 
@@ -14,22 +18,37 @@ if [[ $# -lt 1 ]]; then
 fi
 
 TARGET_DIR="$1"
-OWNER="russ"
-GROUP="russ"
+
+# Prefer an explicit override, then the sudo-invoking user, then whoever we are.
+OWNER="${TORRENT_OWNER:-${SUDO_USER:-$(id -un)}}"
+GROUP="${TORRENT_GROUP:-$(id -gn "${OWNER}" 2>/dev/null || echo "${OWNER}")}"
+
+DIR_MODE="${TORRENT_DIR_MODE:-755}"
+FILE_MODE="${TORRENT_FILE_MODE:-644}"
+
+if ! id -u "${OWNER}" >/dev/null 2>&1; then
+    echo "[ERROR] User does not exist: ${OWNER}" >&2
+    exit 1
+fi
 
 if [[ ! -d "${TARGET_DIR}" ]]; then
     echo "[ERROR] Directory does not exist: ${TARGET_DIR}" >&2
     exit 1
 fi
 
-echo "[INFO] Fixing permissions on ${TARGET_DIR}"
+# Resolve to an absolute path so the log line is unambiguous.
+TARGET_DIR="$(cd "${TARGET_DIR}" && pwd -P)"
 
-# Ownership: russ:russ for everything underneath
-chown -R "${OWNER}:${GROUP}" "${TARGET_DIR}" 2>/dev/null || \
-    sudo -n chown -R "${OWNER}:${GROUP}" "${TARGET_DIR}"
+echo "[INFO] Fixing permissions on ${TARGET_DIR} (owner ${OWNER}:${GROUP})"
 
-# Directories: 755, files: 644
-find "${TARGET_DIR}" -type d -exec chmod 755 {} +
-find "${TARGET_DIR}" -type f -exec chmod 644 {} +
+if ! chown -R "${OWNER}:${GROUP}" "${TARGET_DIR}" 2>/dev/null; then
+    if ! sudo -n chown -R "${OWNER}:${GROUP}" "${TARGET_DIR}" 2>/dev/null; then
+        echo "[ERROR] Could not change ownership (no permission, and passwordless sudo unavailable)" >&2
+        exit 1
+    fi
+fi
+
+find "${TARGET_DIR}" -type d -exec chmod "${DIR_MODE}" {} +
+find "${TARGET_DIR}" -type f -exec chmod "${FILE_MODE}" {} +
 
 echo "[INFO] Permissions fixed"
