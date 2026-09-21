@@ -46,6 +46,9 @@ dht.mode.set = ${RT_DHT_MODE}
 
 ### Network ###
 network.tos.set = throughput
+# rTorrent 0.16.22 caps this at its built-in SCGI content size limit, 16M.
+# Anything larger aborts startup with "XMLRPC size limit cannot exceed the
+# SCGI content size limit" and ruTorrent loses its backend.
 network.xmlrpc.size_limit.set = ${RT_XMLRPC_SIZE_LIMIT}
 
 ### Watch Directory ###
