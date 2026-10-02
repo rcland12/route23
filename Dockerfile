@@ -17,16 +17,6 @@ COPY --chown=${UID}:${GID} ./src/main.py ${HOME}/main.py
 USER 1000
 WORKDIR ${HOME}
 
-ENV TORRENT_DIR=/torrents
-ENV STATE_FILE=/data/states/route23_state.json
-ENV DOWNLOAD_DIR=/downloads
-ENV BATCH_SIZE=20
-ENV ROTATION_DAYS=14
-ENV FORCE_ROTATION=false
-ENV DELETE_DATA=false
-ENV SHOW_STATUS=false
-ENV LOG_LEVEL=INFO
-
 HEALTHCHECK --interval=30s --timeout=5s --start-period=1s --retries=1 \
     CMD python -c "import sys; sys.exit(0)"
 
