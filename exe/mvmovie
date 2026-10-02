@@ -28,6 +28,12 @@ print_error() {
 sync_to_backup() {
     print_info "Starting sync to backup drive..."
 
+    # rsync --delete from an empty or unmounted source would wipe the backup.
+    if [ -z "$(ls -A "$PLEX_DIR" 2>/dev/null)" ]; then
+        print_error "Plex directory is missing or empty, refusing to sync: $PLEX_DIR"
+        return 1
+    fi
+
     if [ ! -d "$BACKUP_DIR" ]; then
         print_warning "Backup directory doesn't exist, creating: $BACKUP_DIR"
         mkdir -p "$BACKUP_DIR"
@@ -35,8 +41,7 @@ sync_to_backup() {
 
     if command -v rsync >/dev/null 2>&1; then
         print_info "Using rsync for backup sync..."
-        rsync -av --delete "$PLEX_DIR/" "$BACKUP_DIR/"
-        if [ $? -eq 0 ]; then
+        if rsync -av --delete "$PLEX_DIR/" "$BACKUP_DIR/"; then
             print_info "Backup sync completed successfully"
         else
             print_error "Backup sync failed"
@@ -44,8 +49,7 @@ sync_to_backup() {
         fi
     else
         print_warning "rsync not found, using cp instead (less efficient)"
-        cp -r "$PLEX_DIR"/* "$BACKUP_DIR/" 2>/dev/null
-        if [ $? -eq 0 ]; then
+        if cp -r "$PLEX_DIR"/* "$BACKUP_DIR/" 2>/dev/null; then
             print_info "Backup copy completed"
         else
             print_error "Backup copy failed"
@@ -62,7 +66,8 @@ move_movie() {
         return 1
     fi
 
-    local movie_basename=$(basename "$movie_dir")
+    local movie_basename
+    movie_basename=$(basename "$movie_dir")
     local dest_path="$PLEX_DIR/$movie_basename"
 
     if [ -d "$dest_path" ]; then
@@ -82,9 +87,7 @@ move_movie() {
     fi
 
     print_info "Moving '$movie_basename' to Plex directory..."
-    mv "$movie_dir" "$dest_path"
-
-    if [ $? -eq 0 ]; then
+    if mv "$movie_dir" "$dest_path"; then
         print_info "Movie moved successfully to: $dest_path"
         return 0
     else

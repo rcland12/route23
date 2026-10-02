@@ -16,6 +16,20 @@ updates:
       prefix: "deps"
       include: "scope"
 
+  - package-ecosystem: "pip"
+    directory: "/.github/requirements"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    reviewers:
+      - "rcland12"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "deps"
+
   - package-ecosystem: "docker"
     directory: "/"
     schedule:

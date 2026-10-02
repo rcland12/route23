@@ -15,6 +15,7 @@
 rutorrent/data/geoip/
 rutorrent/data/rutorrent/
 rutorrent/data/states/*.json
+rutorrent/data/states/known_hosts
 rutorrent/downloads/complete/*
 rutorrent/downloads/route23/*
 rutorrent/downloads/temp/*

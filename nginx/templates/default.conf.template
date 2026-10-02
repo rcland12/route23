@@ -32,7 +32,15 @@ server {
         proxy_read_timeout 7d;
     }
 
+    # XMLRPC can run arbitrary commands in rTorrent, so only private networks
+    # may reach it. Still populate rutorrent/passwd/rpc.htpasswd for auth.
     location /RPC2 {
+        allow 127.0.0.0/8;
+        allow 10.0.0.0/8;
+        allow 172.16.0.0/12;
+        allow 192.168.0.0/16;
+        deny all;
+
         proxy_pass http://vpn:${NGINX_XMLRPC_PORT};
         proxy_http_version 1.1;
         proxy_set_header Host $host;

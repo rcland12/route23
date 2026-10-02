@@ -12,7 +12,7 @@ Environment Variables:
     RTORRENT_URL        - rtorrent XMLRPC endpoint (default: http://localhost:8080/RPC2)
     RTORRENT_USER       - rtorrent username for authentication (optional)
     RTORRENT_PASS       - rtorrent password for authentication (optional)
-    BATCH_SIZE          - Number of torrents per batch (default: 20)
+    BATCH_SIZE          - Number of torrents per batch (default: 10)
     ROTATION_DAYS       - Days between rotations (default: 14)
     DOWNLOAD_DIR        - Download directory for torrent data (default: /downloads/route23)
 
@@ -42,6 +42,8 @@ Environment Variables:
     PRELOAD_USER        - SSH username for the remote machine
     PRELOAD_SSH_KEY     - Path to SSH private key inside the container (default: /keys/id_rsa)
     PRELOAD_REMOTE_DIR  - Directory on the remote machine to search for matching files
+                          The remote host key is pinned on first connect in
+                          known_hosts next to STATE_FILE; delete it if the host is reinstalled.
 
     Notification Settings (optional):
     SMTP_SERVER         - Postfix hostname (default: route23-postfix)
@@ -52,22 +54,26 @@ Environment Variables:
 """
 
 import hashlib
+import html
 import json
 import logging
 import os
 import random
 import re
+import shlex
 import shutil
 import smtplib
-import subprocess
+import subprocess  # nosec B404 - fixed argv lists only, never shell=True
 import time
-import xmlrpc.client
+# XML-RPC only talks to the local rTorrent inside this stack, and Python's
+# bundled expat (>= 2.4.1) rejects entity-expansion bombs.
+import xmlrpc.client  # nosec B411
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import quote, urlparse, urlunparse
 
 
 def _bdecode(data: bytes, idx: int = 0):
@@ -161,7 +167,7 @@ def build_rtorrent_url() -> str:
 
     if user and password:
         parsed = urlparse(base_url)
-        netloc = f"{user}:{password}@{parsed.hostname}"
+        netloc = f"{quote(user, safe='')}:{quote(password, safe='')}@{parsed.hostname}"
         if parsed.port:
             netloc += f":{parsed.port}"
         authenticated_url = urlunparse(
@@ -183,7 +189,7 @@ CONFIG = {
     "torrent_dir": get_env("TORRENT_DIR", "/torrents"),
     "state_file": get_env("STATE_FILE", "/states/route23_state.json"),
     "rtorrent_url": build_rtorrent_url(),
-    "batch_size": get_env_int("BATCH_SIZE", 20),
+    "batch_size": get_env_int("BATCH_SIZE", 10),
     "rotation_days": get_env_int("ROTATION_DAYS", 14),
     "sort_order": get_env("SORT_ORDER", "alphabetical").lower(),
     "download_dir": get_env("DOWNLOAD_DIR", "/downloads/route23"),
@@ -262,17 +268,30 @@ class PreloadManager:
         self.user = config["preload_user"]
         self.key = config["preload_ssh_key"]
         self.remote_dir = config["preload_remote_dir"]
+        # Trust the remote host key on first use and pin it afterwards. Kept
+        # next to the state file so it survives container restarts; delete it
+        # if the remote machine is reinstalled.
+        self.known_hosts = str(
+            Path(config["state_file"]).parent / "known_hosts"
+        )
+
+    def _ssh_options(self) -> list[str]:
+        return [
+            "-i",
+            self.key,
+            "-o",
+            "StrictHostKeyChecking=accept-new",
+            "-o",
+            f"UserKnownHostsFile={self.known_hosts}",
+            "-o",
+            "BatchMode=yes",
+        ]
 
     def _ssh(self, cmd: str, timeout: int = 30) -> tuple[bool, str]:
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603 - argv list, no shell
             [
-                "ssh",
-                "-i",
-                self.key,
-                "-o",
-                "StrictHostKeyChecking=no",
-                "-o",
-                "BatchMode=yes",
+                "/usr/bin/ssh",
+                *self._ssh_options(),
                 f"{self.user}@{self.host}",
                 cmd,
             ],
@@ -280,6 +299,8 @@ class PreloadManager:
             text=True,
             timeout=timeout,
         )
+        if result.returncode != 0 and result.stderr.strip():
+            logger.warning(f"Preload: ssh failed — {result.stderr.strip()}")
         return result.returncode == 0, result.stdout.strip()
 
     def _normalize(self, text: str) -> str:
@@ -315,7 +336,7 @@ class PreloadManager:
         title, year = self._extract_title_year(torrent_name)
         logger.debug(f"Preload: searching for title='{title}' year={year}")
 
-        ok, output = self._ssh(f'ls -1 "{self.remote_dir}"')
+        ok, output = self._ssh(f"ls -1 {shlex.quote(self.remote_dir)}")
         if not ok or not output:
             logger.warning("Preload: could not list remote directory")
             return None
@@ -353,7 +374,7 @@ class PreloadManager:
             re.escape(e.lstrip(".")) for e in self.VIDEO_EXTENSIONS
         )
         cmd = (
-            f'find "{remote_path}" -type f -printf "%s\\t%p\\n"'
+            f'find {shlex.quote(remote_path)} -type f -printf "%s\\t%p\\n"'
             f' | grep -Ei "\\.({ext_pattern})$"'
         )
         ok, output = self._ssh(cmd, timeout=15)
@@ -421,26 +442,34 @@ class PreloadManager:
                 return None, reason
             pairs.append((tf, remote_file))
 
+        root = Path(download_dir).resolve()
         staged_files = []
         for torrent_file, remote_file in pairs:
             if is_multi:
-                dest = Path(download_dir) / torrent_name / torrent_file["path"]
+                dest = root / torrent_name / torrent_file["path"]
             else:
-                dest = Path(download_dir) / torrent_file["path"]
+                dest = root / torrent_file["path"]
+
+            # Paths come from the .torrent file; refuse anything that would
+            # land outside the download directory ("..", absolute paths).
+            dest = dest.resolve()
+            if not dest.is_relative_to(root) or dest == root:
+                reason = f"unsafe file path in torrent: '{torrent_file['path']}'"
+                logger.error(f"Preload: {reason} — skipping '{torrent_name}'")
+                return None, reason
 
             dest.parent.mkdir(parents=True, exist_ok=True)
 
             logger.info(
                 f"Preload: {Path(remote_file).name} ({_format_size(torrent_file['length'])})"
-                f" → {dest.relative_to(download_dir)}"
+                f" → {dest.relative_to(root)}"
             )
-            result = subprocess.run(
+            # scp uses the SFTP protocol (OpenSSH >= 9), so the remote path is
+            # not expanded by a remote shell.
+            result = subprocess.run(  # nosec B603 - argv list, no shell
                 [
-                    "scp",
-                    "-i",
-                    self.key,
-                    "-o",
-                    "StrictHostKeyChecking=no",
+                    "/usr/bin/scp",
+                    *self._ssh_options(),
                     f"{self.user}@{self.host}:{remote_file}",
                     str(dest),
                 ],
@@ -477,17 +506,25 @@ class PreloadManager:
 
         torrent_name = torrent_info["name"]
 
-        remote_dirname = self.find_remote_match(torrent_name)
-        if not remote_dirname:
+        try:
+            remote_dirname = self.find_remote_match(torrent_name)
+            if not remote_dirname:
+                return PreloadResult(
+                    torrent_name=torrent_name,
+                    success=False,
+                    reason="no matching directory found on remote",
+                )
+
+            staged_files, reason = self.fetch_and_stage(
+                remote_dirname, torrent_info, download_dir
+            )
+        except (OSError, subprocess.SubprocessError) as e:
+            logger.error(f"Preload: failed for '{torrent_name}' — {e}")
             return PreloadResult(
                 torrent_name=torrent_name,
                 success=False,
-                reason="no matching directory found on remote",
+                reason=f"preload error: {e}",
             )
-
-        staged_files, reason = self.fetch_and_stage(
-            remote_dirname, torrent_info, download_dir
-        )
         if staged_files is None:
             return PreloadResult(
                 torrent_name=torrent_name,
@@ -563,19 +600,23 @@ class NotificationQueue:
         server_name: str,
     ) -> str:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # Torrent names, file names and remote dirs come from .torrent files
+        # and the remote host, so escape them before putting them in HTML.
+        esc = html.escape
+        server_name = esc(server_name)
 
         def success_item(r: PreloadResult) -> str:
             total = _format_size(r.total_bytes())
             files_html = "".join(
                 f'<div class="file-row">'
-                f'{f["name"]}<span class="file-size">{_format_size(f["size"])}</span>'
+                f'{esc(f["name"])}<span class="file-size">{_format_size(f["size"])}</span>'
                 f"</div>"
                 for f in r.staged_files
             )
             return (
                 f'<div class="item">'
-                f'<div class="item-name">{r.torrent_name}</div>'
-                f'<div class="item-meta">Matched: {r.remote_dir} &nbsp;·&nbsp; '
+                f'<div class="item-name">{esc(r.torrent_name)}</div>'
+                f'<div class="item-meta">Matched: {esc(r.remote_dir)} &nbsp;·&nbsp; '
                 f"{len(r.staged_files)} file(s) &nbsp;·&nbsp; {total}</div>"
                 f"{files_html}"
                 f"</div>"
@@ -583,15 +624,15 @@ class NotificationQueue:
 
         def failure_item(r: PreloadResult) -> str:
             remote = (
-                f'<div class="item-meta">Remote: {r.remote_dir}</div>'
+                f'<div class="item-meta">Remote: {esc(r.remote_dir)}</div>'
                 if r.remote_dir
                 else ""
             )
             return (
                 f'<div class="item item-fail">'
-                f'<div class="item-name">{r.torrent_name}</div>'
+                f'<div class="item-name">{esc(r.torrent_name)}</div>'
                 f"{remote}"
-                f'<div class="reason">{r.reason}</div>'
+                f'<div class="reason">{esc(r.reason)}</div>'
                 f"</div>"
             )
 
@@ -686,8 +727,9 @@ class TorrentRotator:
                 try:
                     if self.rtorrent.d.name(h) == torrent_name:
                         return h
-                except Exception:
-                    pass
+                except Exception as e:
+                    # The torrent may have been removed between list and lookup.
+                    logger.debug(f"Could not read name for {h[:8]}: {e}")
             if attempt < retries - 1:
                 time.sleep(3)
         return None
@@ -851,9 +893,10 @@ class TorrentRotator:
         elif sort_order == "date_added":
             torrents = sorted(torrents, key=lambda t: t.stat().st_mtime)
         elif sort_order == "random":
+            # Seeded shuffle for a stable rotation order, not cryptography.
             if self.state.get("sort_seed") is None:
-                self.state["sort_seed"] = random.randint(0, 2**32)
-            rng = random.Random(self.state["sort_seed"])
+                self.state["sort_seed"] = random.randint(0, 2**32)  # nosec B311
+            rng = random.Random(self.state["sort_seed"])  # nosec B311
             rng.shuffle(torrents)
         else:
             logger.warning(
@@ -865,9 +908,9 @@ class TorrentRotator:
         return [str(t) for t in torrents]
 
     def get_torrent_hash(self, torrent_path: str) -> str:
-        """Get info hash from a .torrent file (simplified - uses file hash)."""
+        """Return a stable ID for a .torrent file (SHA1 of the whole file, not the info hash)."""
         with open(torrent_path, "rb") as f:
-            return hashlib.sha1(f.read()).hexdigest().upper()
+            return hashlib.sha1(f.read(), usedforsecurity=False).hexdigest().upper()
 
     def get_active_torrents(self) -> list:
         """Get list of currently active torrent hashes in rtorrent."""
@@ -883,7 +926,6 @@ class TorrentRotator:
             with open(torrent_path, "rb") as f:
                 torrent_data = f.read()
 
-            last_fault = None
             for attempt in range(3):
                 try:
                     self.rtorrent.load.raw_start(
@@ -893,16 +935,13 @@ class TorrentRotator:
                     )
                     break
                 except xmlrpc.client.Fault as fault:
-                    if fault.faultCode != -507:
+                    if fault.faultCode != -507 or attempt == 2:
                         raise
-                    last_fault = fault
                     logger.warning(
                         f"Transient trust fault adding {Path(torrent_path).name} "
                         f"(attempt {attempt + 1}/3): {fault.faultString}"
                     )
                     time.sleep(2)
-            else:
-                raise last_fault
 
             logger.info(f"Added torrent: {Path(torrent_path).name}")
             return True
@@ -924,7 +963,6 @@ class TorrentRotator:
                         f"Could not get base path for {info_hash[:8]}: {e}"
                     )
 
-            last_fault = None
             for attempt in range(3):
                 try:
                     self.rtorrent.d.stop(info_hash)
@@ -932,16 +970,13 @@ class TorrentRotator:
                     self.rtorrent.d.erase(info_hash)
                     break
                 except xmlrpc.client.Fault as fault:
-                    if fault.faultCode != -507:
+                    if fault.faultCode != -507 or attempt == 2:
                         raise
-                    last_fault = fault
                     logger.warning(
                         f"Transient trust fault removing {info_hash[:8]} "
                         f"(attempt {attempt + 1}/3): {fault.faultString}"
                     )
                     time.sleep(2)
-            else:
-                raise last_fault
             logger.info(f"Removed torrent: {info_hash}")
 
             if delete_data and base_path:
@@ -955,6 +990,15 @@ class TorrentRotator:
     def _delete_path(self, path: str):
         """Delete a file or directory left behind by a removed torrent."""
         p = Path(path)
+        # The path comes from rTorrent; only ever delete inside DOWNLOAD_DIR so
+        # a torrent loaded elsewhere (or a bad base_path) can't wipe other data.
+        root = Path(self.config["download_dir"]).resolve()
+        resolved = p.resolve()
+        if not resolved.is_relative_to(root) or resolved == root:
+            logger.warning(
+                f"Not deleting {path}: outside download directory {root}"
+            )
+            return
         if not p.exists():
             logger.debug(f"Nothing to delete, path does not exist: {path}")
             return
@@ -1019,7 +1063,7 @@ class TorrentRotator:
             )
             self.state["seeded_this_cycle"] = []
             if self.config["sort_order"] == "random":
-                self.state["sort_seed"] = random.randint(0, 2**32)
+                self.state["sort_seed"] = random.randint(0, 2**32)  # nosec B311
                 all_torrents = self.get_torrent_files()
             eligible = all_torrents
 

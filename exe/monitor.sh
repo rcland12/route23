@@ -43,7 +43,7 @@ for i in $(seq 0 $((DURATION/INTERVAL))); do
 
         echo "CONTAINER: $(docker stats --no-stream --format '{{.Container}}: CPU {{.CPUPerc}} | MEM {{.MemUsage}}' 2>/dev/null)"
 
-        CONNECTIONS=$(netstat -an 2>/dev/null | grep :6881 | wc -l)
+        CONNECTIONS=$(netstat -an 2>/dev/null | grep -c :6881)
         STATES=$(netstat -an 2>/dev/null | grep :6881 | awk '{print $6}' | sort | uniq -c | tr '\n' ' ')
         echo "NET: $CONNECTIONS connections | States: $STATES"
 
@@ -51,9 +51,9 @@ for i in $(seq 0 $((DURATION/INTERVAL))); do
         echo "DISK: $DISK_IO"
 
         TOTAL_FDS=$(lsof 2>/dev/null | wc -l)
-        RTORRENT_PID=$(docker exec rtorrent pgrep rtorrent 2>/dev/null)
+        RTORRENT_PID=$(docker exec route23-rutorrent pgrep rtorrent 2>/dev/null)
         if [ ! -z "$RTORRENT_PID" ]; then
-            RTORRENT_FDS=$(docker exec rtorrent sh -c "ls /proc/$RTORRENT_PID/fd 2>/dev/null | wc -l")
+            RTORRENT_FDS=$(docker exec route23-rutorrent sh -c "ls /proc/$RTORRENT_PID/fd 2>/dev/null | wc -l")
             echo "FDS: Total:$TOTAL_FDS | rtorrent:$RTORRENT_FDS"
         else
             echo "FDS: Total:$TOTAL_FDS | rtorrent:N/A"
@@ -64,13 +64,13 @@ for i in $(seq 0 $((DURATION/INTERVAL))); do
             echo "TEMP: $TEMP"
         fi
 
-        ERRORS=$(dmesg | tail -5 | grep -i error | wc -l)
+        ERRORS=$(dmesg | tail -5 | grep -ci error)
         echo "ERRORS: $ERRORS recent kernel errors"
 
     } >> "$LOGFILE"
 
-    if [ $i -lt $((DURATION/INTERVAL)) ]; then
-        sleep $INTERVAL
+    if [ "$i" -lt $((DURATION/INTERVAL)) ]; then
+        sleep "$INTERVAL"
     fi
 done
 
@@ -81,7 +81,7 @@ done
     echo "LOAD: $(cat /proc/loadavg)"
     echo "MEM: $(free | grep Mem | awk '{printf "%.1fGB used of %.1fGB", $3/1024/1024, $2/1024/1024}')"
     echo "SWAP: $(free | grep Swap | awk '{if($2>0) printf "%.1fGB used of %.1fGB", $3/1024/1024, $2/1024/1024; else print "No swap"}')"
-    echo "CONNECTIONS: $(netstat -an 2>/dev/null | grep :6881 | wc -l) active"
+    echo "CONNECTIONS: $(netstat -an 2>/dev/null | grep -c :6881) active"
     echo "CONTAINERS: $(docker ps --format '{{.Names}}: {{.Status}}' | tr '\n' ' ')"
 
     echo ""
@@ -103,10 +103,6 @@ done
     else
         echo "MEMORY: HIGH (${MEM_PERCENT}% used)"
     fi
-
-    echo ""
-    echo "Log file: $LOGFILE"
-    echo "File size: $(du -h "$LOGFILE" | cut -f1)"
 
 } >> "$LOGFILE"
 

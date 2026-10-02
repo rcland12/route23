@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import html
 import os
 import smtplib
 import sys
@@ -34,6 +35,13 @@ def build_html(
 ) -> str:
     size_human = format_size(size_bytes)
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Torrent names and paths come from .torrent files, so escape everything
+    # that ends up in the HTML body.
+    name = html.escape(name or "Unknown")
+    path = html.escape(path or "Unknown")
+    torrent_hash = html.escape(torrent_hash or "Unknown")
+    server_name = html.escape(server_name)
 
     if event_type == "added":
         title = "New Torrent Added"
@@ -157,12 +165,12 @@ def build_html(
     </div>
     <div class="content">
       <div class="label">Torrent</div>
-      <div class="torrent-name">{name or "Unknown"}</div>
+      <div class="torrent-name">{name}</div>
 
       <div class="grid">
         <div>
           <div class="grid-label">Status</div>
-          <div class="grid-value">{event_type.capitalize()}</div>
+          <div class="grid-value">{html.escape(event_type.capitalize())}</div>
         </div>
         <div>
           <div class="grid-label">Size</div>
@@ -170,11 +178,11 @@ def build_html(
         </div>
         <div>
           <div class="grid-label">Download Path</div>
-          <div class="grid-value">{path or "Unknown"}</div>
+          <div class="grid-value">{path}</div>
         </div>
         <div>
           <div class="grid-label">Info Hash</div>
-          <div class="grid-value">{torrent_hash or "Unknown"}</div>
+          <div class="grid-value">{torrent_hash}</div>
         </div>
       </div>
 
@@ -203,7 +211,9 @@ def send_email(
         if event_type == "added"
         else "[rTorrent] Torrent Completed"
     )
-    subject = f"{subject_prefix}: {name or 'Unknown'}"
+    # Collapse whitespace so a crafted torrent name can't inject extra headers.
+    subject_name = " ".join((name or "Unknown").split())
+    subject = f"{subject_prefix}: {subject_name}"
 
     msg = MIMEMultipart("alternative")
     msg["From"] = from_email

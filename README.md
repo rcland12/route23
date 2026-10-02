@@ -1047,7 +1047,7 @@ Two "default" columns are listed below because they differ: **Code** is what `sr
 
 | Variable        | Code default | compose.yml | Description                              |
 | --------------- | ------------ | ----------- | ---------------------------------------- |
-| `BATCH_SIZE`    | `20`         | `10`        | Number of torrents per rotation batch    |
+| `BATCH_SIZE`    | `10`         | `10`        | Number of torrents per rotation batch    |
 | `ROTATION_DAYS` | `14`         | `14`        | Days before rotating to next batch       |
 | `DELETE_DATA`   | `false`      | `true`      | Delete downloaded data when rotating out |
 

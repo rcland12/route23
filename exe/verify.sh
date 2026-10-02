@@ -1,4 +1,7 @@
 #!/bin/bash
+# shellcheck disable=SC2001,SC2016
+# SC2001: the sed calls use regexes that ${var//...} can't express.
+# SC2016: '$' inside the sed patterns is a literal regex character.
 
 # Plex media naming verification script
 # Supports both Movies and TV Shows
@@ -74,9 +77,12 @@ validate_movie_directory_name() {
 
 extract_movie_components() {
     local dir_name="$1"
-    local year=$(echo "$dir_name" | sed -n 's/.*(\([0-9]\{4\}\)).*/\1/p')
-    local imdb_id=$(echo "$dir_name" | sed -n 's/.*{\(imdb-tt[0-9]\+\)}.*/\1/p')
-    local title=$(echo "$dir_name" | sed 's/\s*(.*$//')
+    local year
+    year=$(echo "$dir_name" | sed -n 's/.*(\([0-9]\{4\}\)).*/\1/p')
+    local imdb_id
+    imdb_id=$(echo "$dir_name" | sed -n 's/.*{\(imdb-tt[0-9]\+\)}.*/\1/p')
+    local title
+    title=$(echo "$dir_name" | sed 's/\s*(.*$//')
 
     echo "$title|$year|$imdb_id"
 }
@@ -89,7 +95,8 @@ validate_subtitle_name() {
         return 0
     fi
 
-    local escaped_base=$(printf '%s\n' "$expected_base" | sed 's/[[\.*^$()+?{|]/\\&/g')
+    local escaped_base
+    escaped_base=$(printf '%s\n' "$expected_base" | sed 's/[[\.*^$()+?{|]/\\&/g')
 
     if [[ $subtitle_file =~ ^${escaped_base}\.[a-zA-Z]{2,}\.srt$ ]]; then
         return 0
@@ -114,7 +121,8 @@ validate_video_name() {
     fi
 
     if [[ $video_file =~ ^(.+)\ \([0-9]{4}\)\ -\ (disk|part)[0-9]+\ -\ \{imdb-tt[0-9]{7,}\}\.[a-zA-Z0-9]+$ ]]; then
-        local base_part=$(echo "$video_file" | sed 's/ - \(disk\|part\)[0-9]\+ - {imdb-tt[0-9]\+}\.[a-zA-Z0-9]\+$//')
+        local base_part
+        base_part=$(echo "$video_file" | sed 's/ - \(disk\|part\)[0-9]\+ - {imdb-tt[0-9]\+}\.[a-zA-Z0-9]\+$//')
         if [ "$base_part" = "$(echo "$dir_name" | sed 's/ {imdb-tt[0-9]\+}$//')" ]; then
             return 0
         fi
@@ -143,8 +151,10 @@ validate_season_directory_name() {
 
 extract_tv_components() {
     local dir_name="$1"
-    local year=$(echo "$dir_name" | sed -n 's/.*(\([0-9]\{4\}\)).*/\1/p')
-    local title=$(echo "$dir_name" | sed 's/\s*(.*$//')
+    local year
+    year=$(echo "$dir_name" | sed -n 's/.*(\([0-9]\{4\}\)).*/\1/p')
+    local title
+    title=$(echo "$dir_name" | sed 's/\s*(.*$//')
     
     echo "$title|$year"
 }
@@ -155,7 +165,8 @@ validate_episode_name() {
     local season_num="$3"
     local extension="${episode_file##*.}"
     local base_name="${episode_file%.*}"
-    local escaped_show_name=$(printf '%s\n' "$show_name" | sed 's/[]\.|$(){}?+*^[]/\\&/g')
+    local escaped_show_name
+    escaped_show_name=$(printf '%s\n' "$show_name" | sed 's/[]\.|$(){}?+*^[]/\\&/g')
     local pattern_single="^${escaped_show_name} - s${season_num}e[0-9]{2,} - .+"
     local pattern_multi1="^${escaped_show_name} - s${season_num}e[0-9]{2,}-[0-9]{2,} - .+"
     local pattern_multi2="^${escaped_show_name} - s${season_num}e[0-9]{2,}-e[0-9]{2,} - .+"
@@ -174,7 +185,8 @@ validate_tv_subtitle_name() {
     local show_name="$2"
     local season_num="$3"
     local base_name="${subtitle_file%.srt}"
-    local escaped_show_name=$(printf '%s\n' "$show_name" | sed 's/[]\.|$(){}?+*^[]/\\&/g')
+    local escaped_show_name
+    escaped_show_name=$(printf '%s\n' "$show_name" | sed 's/[]\.|$(){}?+*^[]/\\&/g')
     local pattern_single="^${escaped_show_name} - s${season_num}e[0-9]{2,} - .+"
     local pattern_multi1="^${escaped_show_name} - s${season_num}e[0-9]{2,}-[0-9]{2,} - .+"
     local pattern_multi2="^${escaped_show_name} - s${season_num}e[0-9]{2,}-e[0-9]{2,} - .+"
@@ -199,13 +211,8 @@ verify_movies() {
         exit 1
     fi
 
-    declare -a movie_dirs
-    while IFS= read -r -d '' movie_dir; do
-        movie_dirs+=("$movie_dir")
-    done < <(find "$MOVIES_DIR" -maxdepth 1 -type d ! -path "$MOVIES_DIR" -print0)
-
-    IFS=$'\n' sorted_dirs=($(printf '%s\n' "${movie_dirs[@]}" | sort))
-    unset IFS
+    local -a sorted_dirs
+    mapfile -d '' -t sorted_dirs < <(find "$MOVIES_DIR" -maxdepth 1 -type d ! -path "$MOVIES_DIR" -print0 | sort -z)
 
     for movie_dir in "${sorted_dirs[@]}"; do
         dir_name=$(basename "$movie_dir")
@@ -260,8 +267,7 @@ verify_movies() {
         else
             echo -e "${YELLOW}  Multiple video files found (${#video_files[@]} files):${NC}"
 
-            IFS=$'\n' sorted_files=($(sort <<<"${video_files[*]}"))
-            unset IFS
+            mapfile -t sorted_files < <(printf '%s\n' "${video_files[@]}" | sort)
 
             for video_file in "${sorted_files[@]}"; do
                 if validate_video_name "$video_file" "$dir_name"; then
@@ -287,8 +293,7 @@ verify_movies() {
             echo -e "     Found ${#subtitle_files[@]} subtitle file(s):"
             subtitle_errors=0
 
-            IFS=$'\n' sorted_subtitles=($(sort <<<"${subtitle_files[*]}"))
-            unset IFS
+            mapfile -t sorted_subtitles < <(printf '%s\n' "${subtitle_files[@]}" | sort)
 
             for subtitle_file in "${sorted_subtitles[@]}"; do
                 if validate_subtitle_name "$subtitle_file" "$dir_name"; then
@@ -328,13 +333,8 @@ verify_tv_shows() {
         exit 1
     fi
 
-    declare -a show_dirs
-    while IFS= read -r -d '' show_dir; do
-        show_dirs+=("$show_dir")
-    done < <(find "$TV_SHOWS_DIR" -maxdepth 1 -type d ! -path "$TV_SHOWS_DIR" -print0)
-
-    IFS=$'\n' sorted_dirs=($(printf '%s\n' "${show_dirs[@]}" | sort))
-    unset IFS
+    local -a sorted_dirs
+    mapfile -d '' -t sorted_dirs < <(find "$TV_SHOWS_DIR" -maxdepth 1 -type d ! -path "$TV_SHOWS_DIR" -print0 | sort -z)
 
     for show_dir in "${sorted_dirs[@]}"; do
         show_name=$(basename "$show_dir")
@@ -363,8 +363,7 @@ verify_tv_shows() {
             continue
         fi
 
-        IFS=$'\n' sorted_seasons=($(printf '%s\n' "${season_dirs[@]}" | sort))
-        unset IFS
+        mapfile -t sorted_seasons < <(printf '%s\n' "${season_dirs[@]}" | sort)
 
         show_has_errors=0
 
@@ -380,7 +379,7 @@ verify_tv_shows() {
                 continue
             fi
 
-            season_num=$(echo "$season_name" | sed 's/Season //')
+            season_num="${season_name#Season }"
 
             video_files=()
             while IFS= read -r -d '' video_file; do
@@ -403,8 +402,7 @@ verify_tv_shows() {
             echo -e "  ${BLUE}$season_name:${NC} ${#video_files[@]} episode(s)"
 
             episode_errors=0
-            IFS=$'\n' sorted_episodes=($(sort <<<"${video_files[*]}"))
-            unset IFS
+            mapfile -t sorted_episodes < <(printf '%s\n' "${video_files[@]}" | sort)
 
             for episode_file in "${sorted_episodes[@]}"; do
                 if validate_episode_name "$episode_file" "$show_name" "$season_num"; then
@@ -422,8 +420,7 @@ verify_tv_shows() {
 
             if [ ${#subtitle_files[@]} -gt 0 ]; then
                 subtitle_errors=0
-                IFS=$'\n' sorted_subtitles=($(sort <<<"${subtitle_files[*]}"))
-                unset IFS
+                mapfile -t sorted_subtitles < <(printf '%s\n' "${subtitle_files[@]}" | sort)
 
                 for subtitle_file in "${sorted_subtitles[@]}"; do
                     if validate_tv_subtitle_name "$subtitle_file" "$show_name" "$season_num"; then
