@@ -13,6 +13,9 @@ Environment Variables:
     RTORRENT_USER       - rtorrent username for authentication (optional)
     RTORRENT_PASS       - rtorrent password for authentication (optional)
     BATCH_SIZE          - Number of torrents per batch (default: 10)
+    MAX_BATCH_GB        - Total size cap for one batch, in GB; 0 means no cap (default: 0)
+                          Torrents that would push the batch over it wait for a later batch;
+                          any single torrent larger than the cap is never seeded.
     ROTATION_DAYS       - Days between rotations (default: 14)
     DOWNLOAD_DIR        - Download directory for torrent data (default: /downloads/route23)
 
@@ -190,6 +193,7 @@ CONFIG = {
     "state_file": get_env("STATE_FILE", "/states/route23_state.json"),
     "rtorrent_url": build_rtorrent_url(),
     "batch_size": get_env_int("BATCH_SIZE", 10),
+    "max_batch_bytes": int(get_env_float("MAX_BATCH_GB", 0) * 1024**3),
     "rotation_days": get_env_int("ROTATION_DAYS", 14),
     "sort_order": get_env("SORT_ORDER", "alphabetical").lower(),
     "download_dir": get_env("DOWNLOAD_DIR", "/downloads/route23"),
@@ -1050,7 +1054,7 @@ class TorrentRotator:
 
     def get_next_batch(self) -> list:
         """Get the next batch of torrent files to seed, skipping already-seeded ones."""
-        all_torrents = self.get_torrent_files()
+        all_torrents = self.fit_cap(self.get_torrent_files())
         if not all_torrents:
             return []
 
@@ -1064,15 +1068,50 @@ class TorrentRotator:
             self.state["seeded_this_cycle"] = []
             if self.config["sort_order"] == "random":
                 self.state["sort_seed"] = random.randint(0, 2**32)  # nosec B311
-                all_torrents = self.get_torrent_files()
+                all_torrents = self.fit_cap(self.get_torrent_files())
             eligible = all_torrents
 
-        batch = eligible[: self.config["batch_size"]]
+        cap = self.config["max_batch_bytes"]
+        if not cap:
+            batch = eligible[: self.config["batch_size"]]
+        else:
+            # Fill in rotation order, skipping any torrent that would overflow the
+            # cap; a skipped one stays eligible and leads a later batch instead.
+            batch, total = [], 0
+            for t in eligible:
+                size = self.torrent_size(t)
+                if total + size <= cap:
+                    batch.append(t)
+                    total += size
+                    if len(batch) == self.config["batch_size"]:
+                        break
+            logger.info(f"Batch size on disk: {_format_size(total)} of {_format_size(cap)}")
         logger.info(
             f"Next batch: {len(batch)} torrents "
             f"({len(eligible)} eligible, {len(seeded)} seeded this cycle)"
         )
         return batch
+
+    def fit_cap(self, torrents: list) -> list:
+        """Drop torrents that alone exceed MAX_BATCH_GB; they could never be seeded."""
+        cap = self.config["max_batch_bytes"]
+        if not cap:
+            return torrents
+        fits = [t for t in torrents if self.torrent_size(t) <= cap]
+        if len(fits) < len(torrents):
+            logger.info(
+                f"Skipping {len(torrents) - len(fits)} torrents larger than "
+                f"MAX_BATCH_GB ({_format_size(cap)})"
+            )
+        return fits
+
+    def torrent_size(self, torrent_path: str) -> int:
+        """Total payload of a .torrent file in bytes; 0 if it can't be read."""
+        try:
+            return sum(f["length"] for f in parse_torrent(torrent_path)["files"])
+        except Exception as e:
+            logger.warning(f"Could not read size of {Path(torrent_path).name}: {e}")
+            return 0
 
     def rotate(self, delete_old_data: bool = False):
         """Perform the rotation: remove old batch, add new batch with throttling."""
@@ -1379,6 +1418,8 @@ class TorrentRotator:
         print(f"Total .torrent files:     {len(all_torrents)}")
         print(f"Currently active:         {len(active)}")
         print(f"Batch size:               {self.config['batch_size']}")
+        cap = self.config["max_batch_bytes"]
+        print(f"Max batch size on disk:   {_format_size(cap) if cap else 'no cap'}")
         print(f"Rotation period:          {self.config['rotation_days']} days")
         print(f"Completed batches:        {self.state['completed_batches']}")
         seeded_count = len(self.state.get("seeded_this_cycle", []))

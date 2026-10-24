@@ -157,7 +157,7 @@ sudo openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
 # Start the supporting services (everything except the rotator)
 docker compose up -d
 
-# Access web UI at https://<your-server-ip>
+# Access web UI at https://<your-server-ip>:8443
 ```
 
 That's it! Your route23 instance is running. Add `.torrent` files to `./rutorrent/torrents/` and run your first rotation with `docker compose run --rm app`.
@@ -174,7 +174,7 @@ For detailed configuration options and advanced features, continue reading below
 │                                                              │
 │  ┌──────────┐    ┌──────────────┐    ┌──────────────────┐    │
 │  │  nginx   │───▶│   ruTorrent  │───▶│   VPN (Gluetun)  │──▶ │ Internet
-│  │ :80/:443 │    │   Web UI     │    │   NordVPN/WG     │    │
+│  │:8081/8443│    │   Web UI     │    │   NordVPN/WG     │    │
 │  └──────────┘    └──────────────┘    └──────────────────┘    │
 │        │                                      │              │
 │        │         ┌──────────────┐             │              │
@@ -423,7 +423,7 @@ htpasswd -Bbn your_username your_password > ./rutorrent/passwd/rutorrent.htpassw
 
 ### 5. Create TLS Certificate
 
-nginx serves the web UI over HTTPS, redirecting all plain HTTP traffic on port 80 to port 443. It expects a certificate and key at `/etc/nginx/certs/cert.pem` and `/etc/nginx/certs/key.pem` on the host (mounted read-only into the container).
+nginx serves the web UI over HTTPS, redirecting plain HTTP on port 8081 to HTTPS on port 8443 (set `HTTP_PORT` and `HTTPS_PORT` in `.env` to change them, e.g. to 80/443 if nothing else on the host uses those). It expects a certificate and key at `/etc/nginx/certs/cert.pem` and `/etc/nginx/certs/key.pem` on the host (mounted read-only into the container).
 
 For a quick self-signed certificate:
 
@@ -437,7 +437,7 @@ sudo openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
 
 If you have a real certificate (e.g. from Let's Encrypt or an internal CA), drop the PEM files in the same location instead.
 
-The `server_name` is not hardcoded — `nginx/templates/default.conf.template` is rendered at container start with `NGINX_SERVER_NAME` substituted in (nginx's `envsubst` templating, filtered to `NGINX_`-prefixed variables). Set `NGINX_SERVER_NAME` in `.env` to your hostname; no config file needs editing. The rendered config redirects port 80 to 443, proxies `/` to ruTorrent, and passes `/RPC2` through to rTorrent's XMLRPC socket over SCGI.
+The `server_name` is not hardcoded — `nginx/templates/default.conf.template` is rendered at container start with `NGINX_SERVER_NAME` substituted in (nginx's `envsubst` templating, filtered to `NGINX_`-prefixed variables). Set `NGINX_SERVER_NAME` in `.env` to your hostname; no config file needs editing. The rendered config redirects HTTP to HTTPS, proxies `/` to ruTorrent, and passes `/RPC2` through to rTorrent's XMLRPC socket over SCGI.
 
 ### 6. Start Services
 
@@ -447,7 +447,7 @@ docker compose up -d
 
 The `app` (rotator) service is in the `route23` Compose profile, so `docker compose up` starts only the supporting services — nginx, ruTorrent, VPN, and postfix. The rotator runs on demand (see [Running route23](#running-route23)).
 
-Wait for containers to start (30-60 seconds), then access the web UI at `https://<your-server-ip>` using the credentials you created in steps 3 and 4. With a self-signed certificate your browser will warn about the connection — accept it to continue.
+Wait for containers to start (30-60 seconds), then access the web UI at `https://<your-server-ip>:8443` using the credentials you created in steps 3 and 4. With a self-signed certificate your browser will warn about the connection — accept it to continue.
 
 ### 7. Verify Setup
 
@@ -858,7 +858,7 @@ A forced rotation:
 
 1. Removes **every** torrent currently loaded in rtorrent — not just the ones route23 added. Anything you added manually through the web UI is removed too, and its data is deleted if `DELETE_DATA=true`.
 2. Waits `STARTUP_DELAY` seconds for the system to settle
-3. Selects the next `BATCH_SIZE` torrents that haven't been seeded in this cycle
+3. Selects the next `BATCH_SIZE` torrents that haven't been seeded in this cycle. With `MAX_BATCH_GB` set, it fills the batch in rotation order but skips any torrent that would push the total past the cap; a skipped torrent stays in line and can lead a later batch, so one large movie can go out alongside several small ones
 4. Adds them one at a time with `ADD_DELAY` between each, preloading and hash-checking each one if preload is enabled
 5. Saves the new batch to state and sends the digest email
 
@@ -1049,6 +1049,7 @@ Two "default" columns are listed below because they differ: **Code** is what `sr
 | --------------- | ------------ | ----------- | ---------------------------------------- |
 | `BATCH_SIZE`    | `10`         | `10`        | Number of torrents per rotation batch    |
 | `ROTATION_DAYS` | `14`         | `14`        | Days before rotating to next batch       |
+| `MAX_BATCH_GB`  | `0`          | `0`         | Total size cap for one batch on disk (0 = none). A torrent larger than the cap is never seeded |
 | `DELETE_DATA`   | `false`      | `true`      | Delete downloaded data when rotating out |
 
 #### Performance Settings (for Raspberry Pi)
@@ -1210,7 +1211,7 @@ While route23 is the core automation, these additional features enhance the over
 Access the ruTorrent web interface for manual torrent management:
 
 ```
-https://<server-ip>
+https://<server-ip>:8443
 ```
 
 **Features:**
