@@ -398,13 +398,14 @@ PRELOAD_REMOTE_DIR=/mnt/plex/Media/Movies
 # Leave blank or comment out if you don't want email notifications
 # See Email Notifications section for provider setup guides
 
-POSTFIX_EMAIL=youremail@gmail.com        # Your email address (also the digest recipient)
+POSTFIX_EMAIL=youremail@gmail.com        # Your email address (SMTP login, and the recipient unless NOTIFY_EMAIL is set)
 POSTFIX_PASSWORD=your_app_password       # App password from email provider (not your regular password)
 POSTFIX_HOSTNAME=mail.website.com        # Optional: Your domain name
+# NOTIFY_EMAIL=youremail+route23@gmail.com  # Optional: send notifications to a different address
 POSTFIX_ALLOWED_SENDER_DOMAINS="servername localhost website.com"  # Add your domain if using POSTFIX_HOSTNAME
 ```
 
-> **Note:** `NGINX_SERVER_NAME` is used in three places — the nginx `server_name`, the `SERVER_NAME` label in notification emails, and the postfix hostname context. `POSTFIX_EMAIL` doubles as both the SMTP relay username and the `NOTIFY_EMAIL` recipient for preload digests.
+> **Note:** `NGINX_SERVER_NAME` is used in three places — the nginx `server_name`, the `SERVER_NAME` label in notification emails, and the postfix hostname context. `POSTFIX_EMAIL` is the SMTP relay username, and also the recipient of every notification (rTorrent and preload digests) unless `NOTIFY_EMAIL` is set. Keep it a plain address and put a plus address such as `you+route23@gmail.com` in `NOTIFY_EMAIL`.
 
 ### 4. Create ruTorrent Authentication File
 
@@ -1099,7 +1100,7 @@ After a rotation, repreload, or force-preload run, route23 can send a digest ema
 | `SMTP_SERVER`  | `route23-postfix`      | `route23-postfix`       | SMTP relay (defaults to the included postfix container) |
 | `SMTP_PORT`    | `25`                   | `25`                    | SMTP port                                               |
 | `FROM_EMAIL`   | `torrents@website.com` | `torrents@<your-domain>` | Sender address — change this to your own domain        |
-| `NOTIFY_EMAIL` | (empty)                | `${POSTFIX_EMAIL}`      | Recipient for the digest. Leave blank to disable.       |
+| `NOTIFY_EMAIL` | (empty)                | `${NOTIFY_EMAIL:-${POSTFIX_EMAIL}}` | Recipient for all notifications. Leave both blank to disable. |
 | `SERVER_NAME`  | `route23`              | `${NGINX_SERVER_NAME}`  | Server label shown in the email header                  |
 
 The digest is sent once at the end of a rotation, repreload, or force-preload run, summarizing every torrent that was preloaded and every one that was missed (with the reason). If `NOTIFY_EMAIL` is blank the results are simply discarded.

@@ -46,7 +46,7 @@ services:
       SMTP_SERVER: ${SMTP_SERVER:-route23-postfix}
       SMTP_PORT: ${SMTP_PORT:-25}
       FROM_EMAIL: ${FROM_EMAIL}
-      NOTIFY_EMAIL: ${POSTFIX_EMAIL}
+      NOTIFY_EMAIL: ${NOTIFY_EMAIL:-${POSTFIX_EMAIL}}
       SERVER_NAME: ${NGINX_SERVER_NAME}
     volumes:
       - ./rutorrent/torrents:/torrents:ro
@@ -116,7 +116,7 @@ services:
       SMTP_SERVER: ${SMTP_SERVER:-route23-postfix}
       SMTP_PORT: ${SMTP_PORT:-25}
       FROM_EMAIL: ${FROM_EMAIL}
-      TO_EMAIL: ${POSTFIX_EMAIL}
+      TO_EMAIL: ${NOTIFY_EMAIL:-${POSTFIX_EMAIL}}
       SERVER_NAME: ${NGINX_SERVER_NAME}
     ulimits:
       nproc: 65535
