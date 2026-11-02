@@ -51,7 +51,7 @@ services:
     volumes:
       - ./rutorrent/torrents:/torrents:ro
       - ./rutorrent/data/states:/states
-      - ./rutorrent/downloads:/downloads
+      - ${DOWNLOADS_DIR:-./rutorrent/downloads}:/downloads
       - /proc/loadavg:/proc/loadavg:ro
       - ${PRELOAD_SSH_KEY_HOST}:/keys/id_rsa:ro
 
@@ -125,7 +125,7 @@ services:
         hard: 65536
     volumes:
       - ./rutorrent/data:/data
-      - ./rutorrent/downloads:/downloads
+      - ${DOWNLOADS_DIR:-./rutorrent/downloads}:/downloads
       - ./rutorrent/passwd:/passwd
 
   config:

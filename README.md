@@ -910,6 +910,18 @@ rm ./rutorrent/data/states/route23_state.json
 
 Deleting the state file clears `seeded_this_cycle`, `completed_batches`, and `torrent_history`, so the following rotation starts at the top of your collection. With `SORT_ORDER: random` a fresh `sort_seed` is generated, giving a different ordering than the previous cycle.
 
+#### Choosing What Goes Next
+
+To pick particular torrents for the next batch, list their `.torrent` file names, one per line, in `./rutorrent/data/states/priority.txt` (`PRIORITY_FILE`). The `.torrent` ending is optional; blank lines and `#` comments are ignored.
+
+```text
+# low seeders, seed these first
+Lawrence.of.Arabia.1962.4K.HDR.DV.2160p.BDRemux Ita Eng x265-NAHOM.torrent
+This.Is.Cinerama.1of2.BluRay.x264.AC3.MVGroup.Forum.mkv
+```
+
+At the next rotation (scheduled or forced) the listed torrents go first, in file order, even if they were already seeded this cycle. `BATCH_SIZE` and `MAX_BATCH_GB` still apply, and the rest of the batch is filled in rotation order. Each name is removed from the file once its torrent is added; a name that isn't in the torrent folder, or that is bigger than `MAX_BATCH_GB` on its own, stays in the file with a warning in the log.
+
 ### Preload from Remote (Optional)
 
 If you already have the movie files on another machine (e.g., a Plex server on your LAN), route23 can pre-seed the new batch directly from there instead of waiting for the torrent swarm. Newly added torrents can start seeding within minutes.
@@ -1035,11 +1047,15 @@ Two "default" columns are listed below because they differ: **Code** is what `sr
 
 #### Paths and Connection
 
+`DOWNLOADS_DIR` is read by `compose.yml` only, not by the rotator: the **host** folder mounted at `/downloads` in the app and rTorrent containers. It defaults to `./rutorrent/downloads`; point it at an external drive to keep downloads off the SD card, e.g. `DOWNLOADS_DIR=/mnt/usbdrive/route23`. Mount the drive in `/etc/fstab` with `nofail`, and change it only with the stack stopped: torrents already loaded refer to files under the old folder.
+
+
 | Variable        | Code default                    | compose.yml                  | Description                                            |
 | --------------- | ------------------------------- | ---------------------------- | ------------------------------------------------------ |
 | `TORRENT_DIR`   | `/torrents`                     | `/torrents`                  | Source of `.torrent` files (`./rutorrent/torrents`, ro) |
 | `STATE_FILE`    | `/states/route23_state.json`    | `/states/route23_state.json` | Rotation state (`./rutorrent/data/states/`)            |
 | `DOWNLOAD_DIR`  | `/downloads/route23`            | `/downloads/route23`         | Where data lands (`./rutorrent/downloads/route23`)     |
+| `PRIORITY_FILE` | `/states/priority.txt`          | (code default)               | Torrents to seed first in the next batch (`./rutorrent/data/states/priority.txt`); see [Choosing What Goes Next](#choosing-what-goes-next) |
 | `RTORRENT_URL`  | `http://localhost:8080/RPC2`    | `http://vpn:18000`           | rTorrent XMLRPC endpoint                               |
 | `RTORRENT_USER` | (empty)                         | `${RTORRENT_USER}`           | Injected into the XMLRPC URL when both are set         |
 | `RTORRENT_PASS` | (empty)                         | `${RTORRENT_PASS}`           | Masked in the startup config log                       |

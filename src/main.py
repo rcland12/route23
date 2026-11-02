@@ -9,6 +9,7 @@ and configurable delays between operations.
 Environment Variables:
     TORRENT_DIR         - Directory containing .torrent files (default: /torrents)
     STATE_FILE          - Path to state JSON file (default: /states/route23_state.json)
+    PRIORITY_FILE       - Torrent file names to put first in the next batch, one per line; lines are removed once added (default: /states/priority.txt)
     RTORRENT_URL        - rtorrent XMLRPC endpoint (default: http://localhost:8080/RPC2)
     RTORRENT_USER       - rtorrent username for authentication (optional)
     RTORRENT_PASS       - rtorrent password for authentication (optional)
@@ -191,6 +192,7 @@ def build_rtorrent_url() -> str:
 CONFIG = {
     "torrent_dir": get_env("TORRENT_DIR", "/torrents"),
     "state_file": get_env("STATE_FILE", "/states/route23_state.json"),
+    "priority_file": get_env("PRIORITY_FILE", "/states/priority.txt"),
     "rtorrent_url": build_rtorrent_url(),
     "batch_size": get_env_int("BATCH_SIZE", 10),
     "max_batch_bytes": int(get_env_float("MAX_BATCH_GB", 0) * 1024**3),
@@ -1052,14 +1054,78 @@ class TorrentRotator:
         )
         return False
 
+    def _read_priority_lines(self) -> list[str]:
+        path = Path(self.config["priority_file"])
+        if not path.is_file():
+            return []
+        try:
+            return path.read_text(encoding="utf-8").splitlines()
+        except OSError as e:
+            logger.warning(f"Could not read priority file {path}: {e}")
+            return []
+
+    @staticmethod
+    def _priority_key(line: str) -> str:
+        """The torrent file name a priority line names ('' for blanks and comments)."""
+        entry = line.strip()
+        if not entry or entry.startswith("#"):
+            return ""
+        entry = Path(entry).name
+        if not entry.lower().endswith(".torrent"):
+            entry += ".torrent"
+        return entry.lower()
+
+    def get_priority_torrents(self, all_torrents: list) -> list:
+        """Torrents named in PRIORITY_FILE, in file order, that exist and fit the cap."""
+        by_name = {Path(t).name.lower(): t for t in all_torrents}
+        picked = []
+        for line in self._read_priority_lines():
+            key = self._priority_key(line)
+            if not key:
+                continue
+            if key in by_name:
+                if by_name[key] not in picked:
+                    picked.append(by_name[key])
+            else:
+                logger.warning(
+                    f"Priority: '{line.strip()}' is not in {self.config['torrent_dir']} "
+                    f"(or is larger than MAX_BATCH_GB); left in the file"
+                )
+        if picked:
+            logger.info(f"Priority list: {len(picked)} torrents go first")
+        return picked
+
+    def consume_priority(self, added: list):
+        """Drop the lines for torrents that were just added; keep everything else."""
+        lines = self._read_priority_lines()
+        if not lines:
+            return
+        added_names = {Path(t).name.lower() for t in added}
+        kept = [l for l in lines if self._priority_key(l) not in added_names]
+        if len(kept) == len(lines):
+            return
+        path = Path(self.config["priority_file"])
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        try:
+            tmp.write_text("\n".join(kept) + ("\n" if kept else ""), encoding="utf-8")
+            tmp.replace(path)
+            logger.info(f"Priority list: removed {len(lines) - len(kept)} added torrents")
+        except OSError as e:
+            logger.warning(f"Could not update priority file {path}: {e}")
+
     def get_next_batch(self) -> list:
-        """Get the next batch of torrent files to seed, skipping already-seeded ones."""
+        """Get the next batch of torrent files to seed, skipping already-seeded ones.
+
+        Torrents named in PRIORITY_FILE come first, even if already seeded this
+        cycle; the rest of the batch is filled in rotation order.
+        """
         all_torrents = self.fit_cap(self.get_torrent_files())
         if not all_torrents:
             return []
 
+        priority = self.get_priority_torrents(all_torrents)
         seeded = set(self.state.get("seeded_this_cycle", []))
-        eligible = [t for t in all_torrents if t not in seeded]
+        eligible = [t for t in all_torrents if t not in seeded and t not in priority]
 
         if not eligible:
             logger.info(
@@ -1069,16 +1135,17 @@ class TorrentRotator:
             if self.config["sort_order"] == "random":
                 self.state["sort_seed"] = random.randint(0, 2**32)  # nosec B311
                 all_torrents = self.fit_cap(self.get_torrent_files())
-            eligible = all_torrents
+            eligible = [t for t in all_torrents if t not in priority]
 
+        candidates = priority + eligible
         cap = self.config["max_batch_bytes"]
         if not cap:
-            batch = eligible[: self.config["batch_size"]]
+            batch = candidates[: self.config["batch_size"]]
         else:
             # Fill in rotation order, skipping any torrent that would overflow the
             # cap; a skipped one stays eligible and leads a later batch instead.
             batch, total = [], 0
-            for t in eligible:
+            for t in candidates:
                 size = self.torrent_size(t)
                 if total + size <= cap:
                     batch.append(t)
@@ -1196,6 +1263,7 @@ class TorrentRotator:
         self.state["completed_batches"] += 1
 
         self.save_state()
+        self.consume_priority(added)
         logger.info(f"Rotation complete. Added {len(added)}/{total} torrents.")
         logger.info(f"Next rotation in {self.config['rotation_days']} days")
 
